@@ -1,7 +1,7 @@
 {
   "id": "perceived-reality",
   "title": "GM Tools: Perceived Reality",
-  "description": "Assign tokens, tiles, Secret Doors, and lights to perception groups. Only players whose tokens share a matching group can see them, enabling hallucinations, illusions, and other subjective realities without breaking the shared canvas.",
+  "description": "Assign tokens, tiles, doors, and lights to perception groups. Only players whose tokens share a matching group can see them, enabling hallucinations, illusions, and other subjective realities without breaking the shared canvas.",
   "version": "0.1.0",
   "compatibility": {
     "minimum": "12",
