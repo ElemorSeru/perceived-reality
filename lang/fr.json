@@ -1,0 +1,53 @@
+{
+  "perceived-reality": {
+    "Groups": {
+      "A": { "Label": "Perception : Groupe A" },
+      "B": { "Label": "Perception : Groupe B" },
+      "C": { "Label": "Perception : Groupe C" },
+      "D": { "Label": "Perception : Groupe D" },
+      "E": { "Label": "Perception : Groupe E" },
+      "F": { "Label": "Perception : Groupe F" }
+    },
+    "Settings": {
+      "GroupLabel": {
+        "Name": "Nom d'affichage du Groupe {group}",
+        "Hint": "Remplace le nom affiché dans le HUD du token et les feuilles de configuration. Laissez vide pour utiliser l'étiquette par défaut."
+      },
+      "GmSeeAll": {
+        "Name": "Le MJ voit tous les groupes",
+        "Hint": "Lorsqu'il est activé, le MJ voit toujours les tokens, tuiles et lumières de chaque groupe de perception en pleine visibilité, quel que soit le token sélectionné. Lorsqu'il est désactivé, sélectionner un token affiche un aperçu de la perspective de ce token : tout ce qui se trouve hors de ses groupes de perception (ou autrement caché) est atténué plutôt que masqué, afin que le MJ puisse toujours le voir et le sélectionner. Si aucun token n'est sélectionné, tout revient à la normale."
+      }
+    },
+    "DetectionMode": {
+      "group-a": "Réalité Perçue : Groupe A",
+      "group-b": "Réalité Perçue : Groupe B",
+      "group-c": "Réalité Perçue : Groupe C",
+      "group-d": "Réalité Perçue : Groupe D",
+      "group-e": "Réalité Perçue : Groupe E",
+      "group-f": "Réalité Perçue : Groupe F"
+    },
+    "TokenConfig": {
+      "SectionLabel": "Réalité Perçue",
+      "SectionHint": "Assigne ce token à un ou plusieurs groupes de perception. Seuls les tokens observateurs partageant un groupe correspondant, ou avec l'effet de statut correspondant actif, verront ce token.",
+      "ColumnGroup": "Groupe",
+      "ColumnEnabled": "Activé"
+    },
+    "TileConfig": {
+      "SectionLabel": "Réalité Perçue",
+      "SectionHint": "Assigne cette tuile à un ou plusieurs groupes de perception. Seuls les joueurs dont les tokens partagent un groupe correspondant verront cette tuile sur leur canevas."
+    },
+    "LightConfig": {
+      "SectionLabel": "Réalité Perçue",
+      "SectionHint": "Assigne cette lumière à un ou plusieurs groupes de perception. Seuls les joueurs dont les tokens partagent un groupe correspondant verront cette lumière et son effet d'éclairage."
+    },
+    "WallConfig": {
+      "SectionLabel": "Réalité Perçue",
+      "SectionHint": "S'applique uniquement aux Portes Secrètes. Assignez un ou plusieurs groupes de perception, et les joueurs dont les tokens partagent un groupe correspondant verront cette porte et pourront l'utiliser comme une porte normale. Les autres continueront de voir un mur plein."
+    },
+    "HUD": {
+      "ButtonTooltip": "Réalité Perçue : Définir le Groupe de Perception",
+      "PanelTitle": "Groupes de Perception",
+      "PanelHint": "Activez ou désactivez les groupes auxquels appartient ce token."
+    }
+  }
+}

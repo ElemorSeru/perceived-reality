@@ -1,0 +1,53 @@
+{
+  "perceived-reality": {
+    "Groups": {
+      "A": { "Label": "Percepción: Grupo A" },
+      "B": { "Label": "Percepción: Grupo B" },
+      "C": { "Label": "Percepción: Grupo C" },
+      "D": { "Label": "Percepción: Grupo D" },
+      "E": { "Label": "Percepción: Grupo E" },
+      "F": { "Label": "Percepción: Grupo F" }
+    },
+    "Settings": {
+      "GroupLabel": {
+        "Name": "Nombre de visualización del Grupo {group}",
+        "Hint": "Reemplaza el nombre mostrado en el HUD del token y las hojas de configuración. Déjalo en blanco para usar la etiqueta predeterminada."
+      },
+      "GmSeeAll": {
+        "Name": "El MJ ve todos los grupos",
+        "Hint": "Cuando está activado, el MJ siempre ve los tokens, tiles y luces de todos los grupos de percepción con plena visibilidad, independientemente del token que tenga seleccionado. Cuando está desactivado, seleccionar un token muestra una vista previa de la perspectiva de ese token: todo lo que esté fuera de sus grupos de percepción (u oculto de otro modo) se atenúa en lugar de ocultarse, de modo que el MJ pueda seguir viéndolo y seleccionándolo. Si no hay ningún token seleccionado, todo vuelve a la normalidad."
+      }
+    },
+    "DetectionMode": {
+      "group-a": "Realidad Percibida: Grupo A",
+      "group-b": "Realidad Percibida: Grupo B",
+      "group-c": "Realidad Percibida: Grupo C",
+      "group-d": "Realidad Percibida: Grupo D",
+      "group-e": "Realidad Percibida: Grupo E",
+      "group-f": "Realidad Percibida: Grupo F"
+    },
+    "TokenConfig": {
+      "SectionLabel": "Realidad Percibida",
+      "SectionHint": "Asigna este token a uno o más grupos de percepción. Solo los tokens observadores que compartan un grupo coincidente, o con el efecto de estado correspondiente activo, verán este token.",
+      "ColumnGroup": "Grupo",
+      "ColumnEnabled": "Activado"
+    },
+    "TileConfig": {
+      "SectionLabel": "Realidad Percibida",
+      "SectionHint": "Asigna este tile a uno o más grupos de percepción. Solo los jugadores cuyos tokens compartan un grupo coincidente verán este tile en su lienzo."
+    },
+    "LightConfig": {
+      "SectionLabel": "Realidad Percibida",
+      "SectionHint": "Asigna esta luz a uno o más grupos de percepción. Solo los jugadores cuyos tokens compartan un grupo coincidente verán esta luz y su efecto de iluminación."
+    },
+    "WallConfig": {
+      "SectionLabel": "Realidad Percibida",
+      "SectionHint": "Solo se aplica a Puertas Secretas. Asigna uno o más grupos de percepción, y los jugadores cuyos tokens compartan un grupo coincidente verán esta puerta y podrán usarla como una puerta normal. El resto seguirá viendo un muro sólido."
+    },
+    "HUD": {
+      "ButtonTooltip": "Realidad Percibida: Establecer Grupo de Percepción",
+      "PanelTitle": "Grupos de Percepción",
+      "PanelHint": "Activa o desactiva los grupos a los que pertenece este token."
+    }
+  }
+}

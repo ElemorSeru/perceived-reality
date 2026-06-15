@@ -1,0 +1,53 @@
+{
+  "perceived-reality": {
+    "Groups": {
+      "A": { "Label": "感知：群组 A" },
+      "B": { "Label": "感知：群组 B" },
+      "C": { "Label": "感知：群组 C" },
+      "D": { "Label": "感知：群组 D" },
+      "E": { "Label": "感知：群组 E" },
+      "F": { "Label": "感知：群组 F" }
+    },
+    "Settings": {
+      "GroupLabel": {
+        "Name": "群组 {group} 显示名称",
+        "Hint": "覆盖在代币HUD和配置表中显示的名称。留空则使用默认标签。"
+      },
+      "GmSeeAll": {
+        "Name": "GM看到所有群组",
+        "Hint": "启用后，GM将始终以完全可见的状态看到所有感知群组的代币、瓷砖和光源，无论当前选中了哪个代币。禁用后，选择一个代币会预览该代币的视角：任何不在其感知群组内的内容(或因其他原因被隐藏的内容)将变暗而不是被隐藏，以便GM仍可以看到并选中它。未选择任何代币时，一切恢复正常。"
+      }
+    },
+    "DetectionMode": {
+      "group-a": "感知现实：群组 A",
+      "group-b": "感知现实：群组 B",
+      "group-c": "感知现实：群组 C",
+      "group-d": "感知现实：群组 D",
+      "group-e": "感知现实：群组 E",
+      "group-f": "感知现实：群组 F"
+    },
+    "TokenConfig": {
+      "SectionLabel": "感知现实",
+      "SectionHint": "将此代币分配到一个或多个感知群组。只有共享匹配群组的观察者代币，或具有相应状态效果的代币，才能看到此代币。",
+      "ColumnGroup": "群组",
+      "ColumnEnabled": "启用"
+    },
+    "TileConfig": {
+      "SectionLabel": "感知现实",
+      "SectionHint": "将此瓷砖分配到一个或多个感知群组。只有代币共享匹配群组的玩家才能在画布上看到此瓷砖。"
+    },
+    "LightConfig": {
+      "SectionLabel": "感知现实",
+      "SectionHint": "将此光源分配到一个或多个感知群组。只有代币共享匹配群组的玩家才能看到此光源及其照明效果。"
+    },
+    "WallConfig": {
+      "SectionLabel": "感知现实",
+      "SectionHint": "仅适用于秘密门。分配一个或多个感知群组后，代币共享匹配群组的玩家将能看到并像普通门一样使用这扇门。其他玩家仍然只会看到一段实墙。"
+    },
+    "HUD": {
+      "ButtonTooltip": "感知现实：设置感知群组",
+      "PanelTitle": "感知群组",
+      "PanelHint": "切换此代币所属的群组。"
+    }
+  }
+}

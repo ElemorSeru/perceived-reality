@@ -1,0 +1,48 @@
+{
+  "id": "perceived-reality",
+  "title": "GM Tools: Perceived Reality",
+  "description": "Assign tokens, tiles, Secret Doors, and lights to perception groups. Only players whose tokens share a matching group can see them, enabling hallucinations, illusions, and other subjective realities without breaking the shared canvas.",
+  "version": "0.1.0",
+  "compatibility": {
+    "minimum": "12",
+    "verified": "12"
+  },
+  "authors": [
+    {
+      "name": "Elemor",
+      "patreon": "https://www.patreon.com/Elemor",
+      "flags": {}
+    }
+  ],
+  "scripts": [
+    "scripts/constants.js",
+    "scripts/settings.js",
+    "scripts/status-effects.js",
+    "scripts/detection-mode.js",
+    "scripts/tile-visibility.js",
+    "scripts/light-visibility.js",
+    "scripts/wall-visibility.js",
+    "scripts/token-visibility.js",
+    "scripts/token-config-hook.js",
+    "scripts/token-hud-button.js",
+    "scripts/main.js"
+  ],
+  "styles": [
+    "styles/perceived-reality.css"
+  ],
+  "esmodules": [],
+  "languages": [
+    {
+      "lang": "en",
+      "name": "English",
+      "path": "lang/en.json",
+      "flags": {}
+    }
+  ],
+  "packs": [],
+  "dependencies": [],
+  "license": "",
+  "url": "https://github.com/ElemorSeru/perceived-reality",
+  "manifest": "https://github.com/ElemorSeru/perceived-reality/releases/latest/download/module.json",
+  "download": "https://github.com/ElemorSeru/perceived-reality/releases/latest/download/module.zip"
+}
