@@ -119,12 +119,7 @@ Viewer group assignments on a token are stored as a combination of that token's 
 The module ships with translations for:
 
 - English
-- Spanish
-- French
-- Armenian
-- Japanese
-- Russian
-- Chinese
+- (More as time allows)
 
 ---
 
