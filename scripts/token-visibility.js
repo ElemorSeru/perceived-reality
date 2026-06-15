@@ -36,6 +36,14 @@ window.refreshTokenPerception = function() {
     // Flag fallback
     const flagGroups = viewerToken.getFlag(MODULE_ID, "viewerGroups") ?? [];
     for (const g of flagGroups) _prTokenViewerGroups.add(g);
+
+    for (const effect of viewerToken.actor?.effects ?? []) {
+      if (effect.disabled) continue;
+      const efGroups = effect.getFlag(MODULE_ID, FLAG_PERCEPTION_GROUPS);
+      if (Array.isArray(efGroups)) {
+        for (const g of efGroups) _prTokenViewerGroups.add(g);
+      }
+    }
   }
 
   // Redraw every token since a token may have just lost its last grouping

@@ -32,6 +32,14 @@ window.refreshLightPerception = function() {
     for (const g of viewerToken.getFlag(MODULE_ID, "viewerGroups") ?? []) {
       _prLightViewerGroups.add(g);
     }
+
+    for (const effect of viewerToken.actor?.effects ?? []) {
+      if (effect.disabled) continue;
+      const efGroups = effect.getFlag(MODULE_ID, FLAG_PERCEPTION_GROUPS);
+      if (Array.isArray(efGroups)) {
+        for (const g of efGroups) _prLightViewerGroups.add(g);
+      }
+    }
   }
 
   _applyAllLightPerception();

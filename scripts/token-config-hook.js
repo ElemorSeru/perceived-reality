@@ -56,8 +56,11 @@ function _injectGroupSection(app, el, doc, type) {
 
   let sectionHtml;
 
-  if (type === "token" || type === "light" || type === "wall") {
-    const guardClass = type === "token" ? "pr-token-section" : type === "light" ? "pr-light-section" : "pr-wall-section";
+  if (type === "token" || type === "tile" || type === "light" || type === "wall") {
+    const guardClass = type === "token" ? "pr-token-section"
+      : type === "light" ? "pr-light-section"
+      : type === "wall" ? "pr-wall-section"
+      : "pr-tile-section";
     const rows = PERCEPTION_GROUPS.map(group => {
       const label = getGroupLabel(group.id);
       const checked = currentGroups.includes(group.id) ? "checked" : "";
@@ -82,27 +85,6 @@ function _injectGroupSection(app, el, doc, type) {
         </div>
         ${rows}
       </fieldset>`;
-  } else {
-    const rows = PERCEPTION_GROUPS.map(group => {
-      const label = getGroupLabel(group.id);
-      const checked = currentGroups.includes(group.id) ? "checked" : "";
-      return `
-        <div class="pr-group-row">
-          <input type="checkbox"
-                 id="pr-${group.id}"
-                 data-pr-group="${group.id}"
-                 ${checked} />
-          <img src="${group.icon}" class="pr-group-icon" title="${label}" alt="" />
-          <label for="pr-${group.id}">${label}</label>
-        </div>`;
-    }).join("");
-
-    sectionHtml = `
-      <div class="form-group pr-section pr-${type}-section">
-        <label class="pr-section-title">${sectionLabel}</label>
-        <p class="notes">${sectionHint}</p>
-        <div class="pr-group-list">${rows}</div>
-      </div>`;
   }
 
   let target;
