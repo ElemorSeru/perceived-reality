@@ -30,15 +30,16 @@ A token only needs to belong to **one** of an object's assigned groups to percei
 ## What Can Be Hidden
 
 ### Tokens & Tiles
+<img width="443" height="590" alt="image" src="https://github.com/ElemorSeru/perceived-reality/blob/master/assets/screenshots/PR_TokenSettings.png" /><img width="317" height="590" alt="image" src="https://github.com/ElemorSeru/perceived-reality/blob/master/assets/screenshots/PR_TileSettings.png" />
 
 Assign one or more perception groups to a token or tile, and only players whose characters share a matching group will see it rendered on their canvas. Everyone else's canvas behaves as if it isn't there at all, no flicker, no placeholder, no "hidden" icon for players.
 
 ### Lights
-
+<img width="346" height="590" alt="image" src="https://github.com/ElemorSeru/perceived-reality/blob/master/assets/screenshots/PR_LightSettings.png" />
 Lights work the same way, with one extra wrinkle: a restricted light's illumination is also hidden from non-matching players, not just its control icon. To everyone outside the group, the room stays exactly as dark (or as lit by other sources) as it would be without that light.
 
 ### Walls & Doors
-
+<img width="329" height="590" alt="image" src="https://github.com/ElemorSeru/perceived-reality/blob/master/assets/screenshots/PR_WallSettings.png" />
 Walls can be restricted too, and the behavior depends on the wall's existing Door type:
 
 - **A regular Door** assigned to one or more groups becomes a normal, usable door for matching players, and a plain solid wall (no door icon, no opening) for everyone else.
@@ -54,7 +55,7 @@ This means a hidden passage can be "secret to the party but obvious to the rogue
 A token "belongs" to a perception group through its **viewer groups**, which can be set in two ways:
 
 ### Token HUD Button
-
+<img width="339" height="590" alt="image" src="https://github.com/ElemorSeru/perceived-reality/blob/master/assets/screenshots/PR_TokenViewSettings.png" />
 GMs get a new eye icon on the Token HUD. Clicking it opens a small panel listing all six perception groups, click any of them to toggle that token in or out of the group. This is the quickest way to permanently assign a PC (or any token) to a group, for example, giving the party rogue permanent access to a hidden-door group.
 
 ### Status Effects (Active Effects)
@@ -66,7 +67,7 @@ This is the intended path for *temporary* perception changes, true seeing, a hal
 ---
 
 ## GM Tools & Preview Mode
-
+<img width="644" height="590" alt="image" src="https://github.com/ElemorSeru/perceived-reality/blob/master/assets/screenshots/PR_Settings.png" />
 ### GM Sees All Groups
 
 By default, GMs always see every token, tile, light, and door at full visibility regardless of perception group, exactly as if Perceived Reality wasn't installed for them. This can be turned off in the module settings.
