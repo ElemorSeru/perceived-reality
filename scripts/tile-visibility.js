@@ -3,11 +3,11 @@ let _prIsGM = false;
 let _prGmSeeAll = false;
 let _prHasSelection = false;
 
-window.refreshTilePerception = function() {
+window.prRefreshTilePerception = function() {
   if (!canvas?.scene) return;
 
   _prIsGM = game.user?.isGM ?? false;
-  _prGmSeeAll = _prIsGM && (game.settings.get(MODULE_ID, "gmSeeAll") ?? true);
+  _prGmSeeAll = _prIsGM && (game.settings.get(PR_MODULE_ID, "gmSeeAll") ?? true);
 
   _prViewerGroups = new Set();
 
@@ -16,7 +16,7 @@ window.refreshTilePerception = function() {
 
   // Players keep perceiving via their own character; GMs fall back to gmSeeAll / preview-on-select.
   let viewerToken = controlled[0]?.document ?? null;
-  if (!viewerToken && !_prIsGM) viewerToken = getDefaultPlayerToken()?.document ?? null;
+  if (!viewerToken && !_prIsGM) viewerToken = prGetDefaultPlayerToken()?.document ?? null;
 
   if (viewerToken) {
     const rawModes = viewerToken.detectionModes ?? {};
@@ -27,16 +27,16 @@ window.refreshTilePerception = function() {
 
     for (const mode of modeList) {
       if (!mode.enabled) continue;
-      const match = PERCEPTION_GROUPS.find(g => detectionModeIdForGroup(g.id) === mode.id);
+      const match = PR_PERCEPTION_GROUPS.find(g => prDetectionModeIdForGroup(g.id) === mode.id);
       if (match) _prViewerGroups.add(match.id);
     }
 
-    const flagGroups = viewerToken.getFlag(MODULE_ID, "viewerGroups") ?? [];
+    const flagGroups = viewerToken.getFlag(PR_MODULE_ID, "viewerGroups") ?? [];
     for (const g of flagGroups) _prViewerGroups.add(g);
 
     for (const effect of viewerToken.actor?.effects ?? []) {
       if (effect.disabled) continue;
-      const efGroups = effect.getFlag(MODULE_ID, FLAG_PERCEPTION_GROUPS);
+      const efGroups = effect.getFlag(PR_MODULE_ID, PR_FLAG_PERCEPTION_GROUPS);
       if (Array.isArray(efGroups)) {
         for (const g of efGroups) _prViewerGroups.add(g);
       }
@@ -50,14 +50,14 @@ window.refreshTilePerception = function() {
 };
 
 Hooks.on("refreshTile", function(tile) {
-  const tileGroups = tile.document.getFlag(MODULE_ID, FLAG_PERCEPTION_GROUPS);
+  const tileGroups = tile.document.getFlag(PR_MODULE_ID, PR_FLAG_PERCEPTION_GROUPS);
   const baseVisible = tile.visible;
 
   if (!tileGroups || tileGroups.length === 0) {
     const baseAlpha = tile.document.alpha ?? 1;
     tile.visible = baseVisible;
     tile.alpha = baseAlpha;
-    if (tile.mesh) { tile.mesh.visible = baseVisible; tile.mesh.alpha = baseAlpha; applyDesaturation(tile.mesh, false); }
+    if (tile.mesh) { tile.mesh.visible = baseVisible; tile.mesh.alpha = baseAlpha; prApplyDesaturation(tile.mesh, false); }
     if (tile.object) { tile.object.visible = baseVisible; tile.object.alpha = baseAlpha; }
     return;
   }
@@ -68,10 +68,10 @@ Hooks.on("refreshTile", function(tile) {
     // GM preview mode: stay visible and dim instead of hiding what the selected token can't perceive
     const baseAlpha = tile.document.alpha ?? 1;
     const dim = tile.document.hidden || !matches;
-    const alpha = dim ? Math.min(baseAlpha, GM_DIM_ALPHA) : baseAlpha;
+    const alpha = dim ? Math.min(baseAlpha, PR_GM_DIM_ALPHA) : baseAlpha;
     tile.visible = baseVisible;
     tile.alpha = alpha;
-    if (tile.mesh) { tile.mesh.visible = baseVisible; tile.mesh.alpha = alpha; applyDesaturation(tile.mesh, dim); }
+    if (tile.mesh) { tile.mesh.visible = baseVisible; tile.mesh.alpha = alpha; prApplyDesaturation(tile.mesh, dim); }
     if (tile.object) { tile.object.visible = baseVisible; tile.object.alpha = alpha; }
     return;
   }
@@ -80,7 +80,7 @@ Hooks.on("refreshTile", function(tile) {
   const groupVisible = _prGmSeeAll || (_prIsGM && !_prHasSelection) || matches;
   const visible = baseVisible && groupVisible;
 
-  if (tile.mesh) { tile.mesh.visible = visible; applyDesaturation(tile.mesh, false); }
+  if (tile.mesh) { tile.mesh.visible = visible; prApplyDesaturation(tile.mesh, false); }
   if (tile.object) tile.object.visible = visible;
   tile.visible = visible;
 
@@ -92,13 +92,13 @@ Hooks.on("refreshTile", function(tile) {
   }
 });
 
-Hooks.on("canvasReady", function() { refreshTilePerception(); });
-Hooks.on("updateTile", function() { refreshTilePerception(); });
-Hooks.on("controlToken", function() { refreshTilePerception(); });
+Hooks.on("canvasReady", function() { prRefreshTilePerception(); });
+Hooks.on("updateTile", function() { prRefreshTilePerception(); });
+Hooks.on("controlToken", function() { prRefreshTilePerception(); });
 Hooks.on("updateToken", function(_doc, change) {
-  if (change.detectionModes || change.flags?.[MODULE_ID]) refreshTilePerception();
+  if (change.detectionModes || change.flags?.[PR_MODULE_ID]) prRefreshTilePerception();
 });
 
-Hooks.on("createActiveEffect", function() { refreshTilePerception(); });
-Hooks.on("deleteActiveEffect", function() { refreshTilePerception(); });
-Hooks.on("updateActiveEffect", function() { refreshTilePerception(); });
+Hooks.on("createActiveEffect", function() { prRefreshTilePerception(); });
+Hooks.on("deleteActiveEffect", function() { prRefreshTilePerception(); });
+Hooks.on("updateActiveEffect", function() { prRefreshTilePerception(); });

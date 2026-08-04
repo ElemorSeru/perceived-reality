@@ -3,11 +3,11 @@ let _prTokenIsGM = false;
 let _prTokenGmSeeAll = false;
 let _prTokenHasSelection = false;
 
-window.refreshTokenPerception = function() {
+window.prRefreshTokenPerception = function() {
   if (!canvas?.scene) return;
 
   _prTokenIsGM = game.user?.isGM ?? false;
-  _prTokenGmSeeAll = _prTokenIsGM && (game.settings.get(MODULE_ID, "gmSeeAll") ?? true);
+  _prTokenGmSeeAll = _prTokenIsGM && (game.settings.get(PR_MODULE_ID, "gmSeeAll") ?? true);
 
   _prTokenViewerGroups = new Set();
 
@@ -17,7 +17,7 @@ window.refreshTokenPerception = function() {
   let viewerToken = controlled[0]?.document ?? null;
 
   if (!viewerToken && !_prTokenIsGM) {
-    viewerToken = getDefaultPlayerToken()?.document ?? null;
+    viewerToken = prGetDefaultPlayerToken()?.document ?? null;
   }
 
   if (viewerToken) {
@@ -29,17 +29,17 @@ window.refreshTokenPerception = function() {
 
     for (const mode of modeList) {
       if (!mode.enabled) continue;
-      const match = PERCEPTION_GROUPS.find(g => detectionModeIdForGroup(g.id) === mode.id);
+      const match = PR_PERCEPTION_GROUPS.find(g => prDetectionModeIdForGroup(g.id) === mode.id);
       if (match) _prTokenViewerGroups.add(match.id);
     }
 
     // Flag fallback
-    const flagGroups = viewerToken.getFlag(MODULE_ID, "viewerGroups") ?? [];
+    const flagGroups = viewerToken.getFlag(PR_MODULE_ID, "viewerGroups") ?? [];
     for (const g of flagGroups) _prTokenViewerGroups.add(g);
 
     for (const effect of viewerToken.actor?.effects ?? []) {
       if (effect.disabled) continue;
-      const efGroups = effect.getFlag(MODULE_ID, FLAG_PERCEPTION_GROUPS);
+      const efGroups = effect.getFlag(PR_MODULE_ID, PR_FLAG_PERCEPTION_GROUPS);
       if (Array.isArray(efGroups)) {
         for (const g of efGroups) _prTokenViewerGroups.add(g);
       }
@@ -53,14 +53,14 @@ window.refreshTokenPerception = function() {
 };
 
 Hooks.on("refreshToken", function(token) {
-  const tokenGroups = token.document.getFlag(MODULE_ID, FLAG_PERCEPTION_GROUPS);
+  const tokenGroups = token.document.getFlag(PR_MODULE_ID, PR_FLAG_PERCEPTION_GROUPS);
   const baseVisible = token.visible;
 
   if (!tokenGroups || tokenGroups.length === 0) {
     const baseAlpha = token.document.alpha ?? 1;
     token.visible = baseVisible;
     token.alpha = baseAlpha;
-    if (token.mesh) { token.mesh.visible = baseVisible; token.mesh.alpha = baseAlpha; applyDesaturation(token.mesh, false); }
+    if (token.mesh) { token.mesh.visible = baseVisible; token.mesh.alpha = baseAlpha; prApplyDesaturation(token.mesh, false); }
     return;
   }
 
@@ -70,10 +70,10 @@ Hooks.on("refreshToken", function(token) {
     // GM preview mode: stay selectable and dim instead of hiding
     const baseAlpha = token.document.alpha ?? 1;
     const dim = token.document.hidden || !matches;
-    const alpha = dim ? Math.min(baseAlpha, GM_DIM_ALPHA) : baseAlpha;
+    const alpha = dim ? Math.min(baseAlpha, PR_GM_DIM_ALPHA) : baseAlpha;
     token.visible = baseVisible;
     token.alpha = alpha;
-    if (token.mesh) { token.mesh.visible = baseVisible; token.mesh.alpha = alpha; applyDesaturation(token.mesh, dim); }
+    if (token.mesh) { token.mesh.visible = baseVisible; token.mesh.alpha = alpha; prApplyDesaturation(token.mesh, dim); }
     return;
   }
 
@@ -82,7 +82,7 @@ Hooks.on("refreshToken", function(token) {
   const visible = baseVisible && groupVisible;
 
   token.visible = visible;
-  if (token.mesh) { token.mesh.visible = visible; applyDesaturation(token.mesh, false); }
+  if (token.mesh) { token.mesh.visible = visible; prApplyDesaturation(token.mesh, false); }
 
   if (_prTokenIsGM) {
     const baseAlpha = token.document.alpha ?? 1;
@@ -91,11 +91,11 @@ Hooks.on("refreshToken", function(token) {
   }
 });
 
-Hooks.on("canvasReady", function() { refreshTokenPerception(); });
-Hooks.on("controlToken", function() { refreshTokenPerception(); });
+Hooks.on("canvasReady", function() { prRefreshTokenPerception(); });
+Hooks.on("controlToken", function() { prRefreshTokenPerception(); });
 Hooks.on("updateToken", function(_doc, change) {
-  if (change.detectionModes || change.flags?.[MODULE_ID]) refreshTokenPerception();
+  if (change.detectionModes || change.flags?.[PR_MODULE_ID]) prRefreshTokenPerception();
 });
-Hooks.on("createActiveEffect", function() { refreshTokenPerception(); });
-Hooks.on("deleteActiveEffect", function() { refreshTokenPerception(); });
-Hooks.on("updateActiveEffect", function() { refreshTokenPerception(); });
+Hooks.on("createActiveEffect", function() { prRefreshTokenPerception(); });
+Hooks.on("deleteActiveEffect", function() { prRefreshTokenPerception(); });
+Hooks.on("updateActiveEffect", function() { prRefreshTokenPerception(); });

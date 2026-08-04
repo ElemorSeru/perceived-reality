@@ -1,16 +1,14 @@
 console.log("[perceived-reality] Loading module...");
 
-window.MODULE_ID = "perceived-reality";
+window.PR_MODULE_ID = "perceived-reality";
 
-window.FLAG_PERCEPTION_GROUPS = "perceptionGroups";
+window.PR_FLAG_PERCEPTION_GROUPS = "perceptionGroups";
 
-window.GROUP_ALL = "all";
+window.PR_GM_DIM_ALPHA = 0.5;
 
-window.GM_DIM_ALPHA = 0.5;
+window.PR_GM_DIM_ALPHA_ICON = 0.2;
 
-window.GM_DIM_ALPHA_ICON = 0.2;
-
-window.PERCEPTION_GROUPS = [
+window.PR_PERCEPTION_GROUPS = [
   { id: "group-a", labelKey: "perceived-reality.Groups.A.Label", icon: "modules/perceived-reality/assets/icons/group-a.svg" },
   { id: "group-b", labelKey: "perceived-reality.Groups.B.Label", icon: "modules/perceived-reality/assets/icons/group-b.svg" },
   { id: "group-c", labelKey: "perceived-reality.Groups.C.Label", icon: "modules/perceived-reality/assets/icons/group-c.svg" },
@@ -19,16 +17,16 @@ window.PERCEPTION_GROUPS = [
   { id: "group-f", labelKey: "perceived-reality.Groups.F.Label", icon: "modules/perceived-reality/assets/icons/group-f.svg" },
 ];
 
-window.statusIdForGroup = function(groupId) {
-  return `${MODULE_ID}.${groupId}`;
+window.prStatusIdForGroup = function(groupId) {
+  return `${PR_MODULE_ID}.${groupId}`;
 };
 
-window.detectionModeIdForGroup = function(groupId) {
-  return `${MODULE_ID}-detect-${groupId}`;
+window.prDetectionModeIdForGroup = function(groupId) {
+  return `${PR_MODULE_ID}-detect-${groupId}`;
 };
 
 // Viewer fallback when nothing is controlled, players only.
-window.getDefaultPlayerToken = function() {
+window.prGetDefaultPlayerToken = function() {
   const placeables = canvas.tokens?.placeables ?? [];
 
   const characterId = game.user?.character?.id;
@@ -41,7 +39,7 @@ window.getDefaultPlayerToken = function() {
 };
 
 // Stronger GM preview mismatch indicator
-window.applyDesaturation = function(obj, desaturate) {
+window.prApplyDesaturation = function(obj, desaturate) {
   if (!obj) return;
 
   if (desaturate) {

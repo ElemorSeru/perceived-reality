@@ -1,16 +1,16 @@
 Hooks.once("init", () => {
   const gen = game.release?.generation ?? 0;
 
-  if (typeof PERCEPTION_GROUPS === "undefined") {
-    console.error("[perceived-reality] PERCEPTION_GROUPS undefined; constants.js load order problem.");
+  if (typeof PR_PERCEPTION_GROUPS === "undefined") {
+    console.error("[perceived-reality] PR_PERCEPTION_GROUPS undefined; constants.js load order problem.");
     return;
   }
 
   const isV14 = gen >= 14;
 
-  for (const group of PERCEPTION_GROUPS) {
-    const modeId = detectionModeIdForGroup(group.id);
-    const statusId = statusIdForGroup(group.id);
+  for (const group of PR_PERCEPTION_GROUPS) {
+    const modeId = prDetectionModeIdForGroup(group.id);
+    const statusId = prStatusIdForGroup(group.id);
 
     const entry = {
       id: statusId,
@@ -18,8 +18,8 @@ Hooks.once("init", () => {
       img: group.icon,
       changes: [],
       flags: {
-        [MODULE_ID]: {
-          [FLAG_PERCEPTION_GROUPS]: [group.id],
+        [PR_MODULE_ID]: {
+          [PR_FLAG_PERCEPTION_GROUPS]: [group.id],
         },
       },
     };
@@ -28,7 +28,7 @@ Hooks.once("init", () => {
   }
 });
 
-window.getActiveGroupsForToken = function(tokenDoc) {
+window.prGetActiveGroupsForToken = function(tokenDoc) {
   const actor = tokenDoc?.actor;
   if (!actor) return new Set();
 
@@ -36,14 +36,14 @@ window.getActiveGroupsForToken = function(tokenDoc) {
 
   for (const effect of actor.effects ?? []) {
     if (effect.disabled) continue;
-    const flagGroups = effect.getFlag(MODULE_ID, FLAG_PERCEPTION_GROUPS);
+    const flagGroups = effect.getFlag(PR_MODULE_ID, PR_FLAG_PERCEPTION_GROUPS);
     if (Array.isArray(flagGroups)) {
       for (const g of flagGroups) groups.add(g);
     }
   }
 
   for (const statusId of actor.statuses ?? []) {
-    const match = PERCEPTION_GROUPS.find(g => statusIdForGroup(g.id) === statusId);
+    const match = PR_PERCEPTION_GROUPS.find(g => prStatusIdForGroup(g.id) === statusId);
     if (match) groups.add(match.id);
   }
 

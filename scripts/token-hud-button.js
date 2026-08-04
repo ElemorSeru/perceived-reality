@@ -1,15 +1,15 @@
 // Track the currently open panel so we can restore it after HUD re-renders
-let _openPanel = null;
-let _panelTokenId = null;
-let _panelWasOpen = false;
+let _prHudOpenPanel = null;
+let _prHudPanelTokenId = null;
+let _prHudPanelWasOpen = false;
 
-function _removeOpenPanel() {
-  if (_openPanel) {
-    _panelWasOpen = _openPanel.classList.contains("pr-panel-open");
-    _openPanel.remove();
-    _openPanel = null;
+function _prHudRemoveOpenPanel() {
+  if (_prHudOpenPanel) {
+    _prHudPanelWasOpen = _prHudOpenPanel.classList.contains("pr-panel-open");
+    _prHudOpenPanel.remove();
+    _prHudOpenPanel = null;
   } else {
-    _panelWasOpen = false;
+    _prHudPanelWasOpen = false;
   }
 }
 
@@ -27,13 +27,13 @@ Hooks.on("renderTokenHUD", function(hud, html, _data) {
   if (!tokenDoc) return;
 
   // Row clicks re-render the HUD and kills the panel so reopen it after
-  const reopenAfter = _openPanel?.classList.contains("pr-panel-open")
-    && _panelTokenId === tokenDoc.id;
+  const reopenAfter = _prHudOpenPanel?.classList.contains("pr-panel-open")
+    && _prHudPanelTokenId === tokenDoc.id;
 
-  _removeOpenPanel();
-  _panelTokenId = tokenDoc.id;
+  _prHudRemoveOpenPanel();
+  _prHudPanelTokenId = tokenDoc.id;
 
-  const currentGroups = _readViewerGroups(tokenDoc);
+  const currentGroups = _prHudReadViewerGroups(tokenDoc);
 
   const btn = document.createElement("div");
   btn.className = "control-icon pr-hud-btn" + (currentGroups.size > 0 ? " pr-hud-active" : "");
@@ -44,9 +44,9 @@ Hooks.on("renderTokenHUD", function(hud, html, _data) {
   if (leftCol) leftCol.appendChild(btn);
   else el.appendChild(btn);
 
-  const panel = _buildPanel(currentGroups, btn, tokenDoc);
+  const panel = _prHudBuildPanel(currentGroups, btn, tokenDoc);
   document.body.appendChild(panel);
-  _openPanel = panel;
+  _prHudOpenPanel = panel;
 
   function positionPanel() {
     const rect = btn.getBoundingClientRect();
@@ -87,11 +87,11 @@ Hooks.on("renderTokenHUD", function(hud, html, _data) {
   // Clean up when HUD closes for any reason
   Hooks.once("closeTokenHUD", function() {
     closePanel();
-    _removeOpenPanel();
+    _prHudRemoveOpenPanel();
   });
 });
 
-function _readViewerGroups(tokenDoc) {
+function _prHudReadViewerGroups(tokenDoc) {
   const active = new Set();
   const raw = tokenDoc.detectionModes ?? {};
 
@@ -99,25 +99,25 @@ function _readViewerGroups(tokenDoc) {
     // V13: [{ id, enabled, range }]
     for (const mode of raw) {
       if (!mode?.enabled) continue;
-      const match = PERCEPTION_GROUPS.find(g => detectionModeIdForGroup(g.id) === mode.id);
+      const match = PR_PERCEPTION_GROUPS.find(g => prDetectionModeIdForGroup(g.id) === mode.id);
       if (match) active.add(match.id);
     }
   } else {
     // V14: { "mode-id": { enabled, range }, ... }
     for (const modeId of Object.keys(raw)) {
       if (!raw[modeId]?.enabled) continue;
-      const match = PERCEPTION_GROUPS.find(g => detectionModeIdForGroup(g.id) === modeId);
+      const match = PR_PERCEPTION_GROUPS.find(g => prDetectionModeIdForGroup(g.id) === modeId);
       if (match) active.add(match.id);
     }
   }
 
-  const flagGroups = tokenDoc.getFlag(MODULE_ID, "viewerGroups") ?? [];
+  const flagGroups = tokenDoc.getFlag(PR_MODULE_ID, "viewerGroups") ?? [];
   for (const g of flagGroups) active.add(g);
 
   return active;
 }
 
-function _buildPanel(currentGroups, btn, tokenDoc) {
+function _prHudBuildPanel(currentGroups, btn, tokenDoc) {
   const localGroups = new Set(currentGroups);
 
   const panel = document.createElement("div");
@@ -134,8 +134,8 @@ function _buildPanel(currentGroups, btn, tokenDoc) {
   hint.textContent = game.i18n.localize("perceived-reality.HUD.PanelHint");
   panel.appendChild(hint);
 
-  for (const group of PERCEPTION_GROUPS) {
-    const label = getGroupLabel(group.id);
+  for (const group of PR_PERCEPTION_GROUPS) {
+    const label = prGetGroupLabel(group.id);
     const isActive = localGroups.has(group.id);
 
     const row = document.createElement("div");
@@ -165,7 +165,7 @@ function _buildPanel(currentGroups, btn, tokenDoc) {
       }
       btn.classList.toggle("pr-hud-active", localGroups.size > 0);
 
-      await _commitViewerGroups(tokenDoc, localGroups);
+      await _prHudCommitViewerGroups(tokenDoc, localGroups);
     });
 
     panel.appendChild(row);
@@ -174,7 +174,7 @@ function _buildPanel(currentGroups, btn, tokenDoc) {
   return panel;
 }
 
-async function _commitViewerGroups(tokenDoc, localGroups) {
+async function _prHudCommitViewerGroups(tokenDoc, localGroups) {
   const groupIds = Array.from(localGroups);
   const raw = tokenDoc.detectionModes ?? {};
   const isV14 = !Array.isArray(raw);
@@ -188,8 +188,8 @@ async function _commitViewerGroups(tokenDoc, localGroups) {
         updateData["detectionModes.-=perceived-reality"] = null;
       }
 
-      for (const group of PERCEPTION_GROUPS) {
-        const modeId = detectionModeIdForGroup(group.id);
+      for (const group of PR_PERCEPTION_GROUPS) {
+        const modeId = prDetectionModeIdForGroup(group.id);
         if (localGroups.has(group.id)) {
           updateData[`detectionModes.${modeId}`] = { enabled: true, range: 0 };
         } else {
@@ -201,23 +201,23 @@ async function _commitViewerGroups(tokenDoc, localGroups) {
     } else {
       // V13: detectionModes is an array since full replacement is the only option.
       const others = foundry.utils.deepClone(raw).filter(function(m) {
-        return !PERCEPTION_GROUPS.some(g => detectionModeIdForGroup(g.id) === m.id);
+        return !PR_PERCEPTION_GROUPS.some(g => prDetectionModeIdForGroup(g.id) === m.id);
       });
-      for (const group of PERCEPTION_GROUPS) {
+      for (const group of PR_PERCEPTION_GROUPS) {
         if (localGroups.has(group.id)) {
-          others.push({ id: detectionModeIdForGroup(group.id), enabled: true, range: 0 });
+          others.push({ id: prDetectionModeIdForGroup(group.id), enabled: true, range: 0 });
         }
       }
       await tokenDoc.update({ detectionModes: others });
     }
 
-    await tokenDoc.setFlag(MODULE_ID, "viewerGroups", groupIds);
+    await tokenDoc.setFlag(PR_MODULE_ID, "viewerGroups", groupIds);
   } catch (err) {
     console.error("[perceived-reality] commit failed:", err);
   }
 
   canvas.perception?.update({ refreshVision: true, refreshLighting: true });
-  refreshTilePerception();
-  if (typeof refreshLightPerception === "function") refreshLightPerception();
-  if (typeof refreshTokenPerception === "function") refreshTokenPerception();
+  prRefreshTilePerception();
+  prRefreshLightPerception();
+  prRefreshTokenPerception();
 }

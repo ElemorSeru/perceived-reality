@@ -1,21 +1,16 @@
 Hooks.once("ready", () => {
-  console.log(`[perceived-reality] v${game.modules.get(MODULE_ID)?.version ?? "?"} ready.`);
+  console.log(`[perceived-reality] v${game.modules.get(PR_MODULE_ID)?.version ?? "?"} ready.`);
   console.log(`[perceived-reality] Running on Foundry generation ${game.release?.generation}.`);
 
-  refreshTilePerception();
-  refreshLightPerception();
-  if (typeof refreshTokenPerception === "function") refreshTokenPerception();
-  else console.error("[perceived-reality] refreshTokenPerception is not defined -- token-visibility.js may not have loaded. Try a full Foundry restart.");
-  if (typeof refreshWallPerception === "function") refreshWallPerception();
-  else console.error("[perceived-reality] refreshWallPerception is not defined -- wall-visibility.js may not have loaded. Try a full Foundry restart.");
+  if ((game.release?.generation ?? 0) < 13) document.body.classList.add("pr-legacy-theme");
+
+  prRefreshTilePerception();
+  prRefreshLightPerception();
+  prRefreshTokenPerception();
+  prRefreshWallPerception();
 });
 
-Hooks.on("applyTokenStatusEffect", async (token, statusId, active) => {
-  const group = PERCEPTION_GROUPS.find(g => statusIdForGroup(g.id) === statusId);
-  if (!group) return;
-
-  const tokenDoc = token.document ?? token;
-  const modeId = detectionModeIdForGroup(group.id);
+async function _prSetDetectionModeForToken(tokenDoc, modeId, active) {
   const raw = tokenDoc.detectionModes ?? {};
 
   try {
@@ -42,22 +37,52 @@ Hooks.on("applyTokenStatusEffect", async (token, statusId, active) => {
       await tokenDoc.update(updateData);
     }
   } catch (err) {
-    console.error("[perceived-reality] applyTokenStatusEffect update failed:", err);
+    console.error("[perceived-reality] detection mode update failed:", err);
   }
+}
+
+function _prTokensForActor(actor) {
+  if (!actor) return [];
+  if (actor.isToken && actor.token) return [actor.token];
+  return (canvas.tokens?.placeables ?? [])
+    .filter(t => t.actor?.id === actor.id)
+    .map(t => t.document);
+}
+
+Hooks.on("applyTokenStatusEffect", async (token, statusId, active) => {
+  const group = PR_PERCEPTION_GROUPS.find(g => prStatusIdForGroup(g.id) === statusId);
+  if (!group) return;
+
+  const tokenDoc = token.document ?? token;
+  const modeId = prDetectionModeIdForGroup(group.id);
+  await _prSetDetectionModeForToken(tokenDoc, modeId, active);
 
   canvas.perception?.update({ refreshVision: true, refreshLighting: true });
-  refreshTilePerception();
-  if (typeof refreshLightPerception === "function") refreshLightPerception();
-  if (typeof refreshTokenPerception === "function") refreshTokenPerception();
-  if (typeof refreshWallPerception === "function") refreshWallPerception();
+  prRefreshTilePerception();
+  prRefreshLightPerception();
+  prRefreshTokenPerception();
+  prRefreshWallPerception();
 });
 
-Hooks.on("applyTokenStatusEffect", (_token, statusId, _active) => {
-  const isOurs = PERCEPTION_GROUPS.some(g => statusIdForGroup(g.id) === statusId);
-  if (isOurs) {
-    refreshTilePerception();
-    if (typeof refreshLightPerception === "function") refreshLightPerception();
-    if (typeof refreshTokenPerception === "function") refreshTokenPerception();
-    if (typeof refreshWallPerception === "function") refreshWallPerception();
+// hook unreliable in dnd5e v12 so sync via effects
+Hooks.on("createActiveEffect", async (effect) => {
+  const groups = effect.getFlag(PR_MODULE_ID, PR_FLAG_PERCEPTION_GROUPS);
+  if (!Array.isArray(groups)) return;
+
+  for (const tokenDoc of _prTokensForActor(effect.parent)) {
+    for (const groupId of groups) {
+      await _prSetDetectionModeForToken(tokenDoc, prDetectionModeIdForGroup(groupId), true);
+    }
+  }
+});
+
+Hooks.on("deleteActiveEffect", async (effect) => {
+  const groups = effect.getFlag(PR_MODULE_ID, PR_FLAG_PERCEPTION_GROUPS);
+  if (!Array.isArray(groups)) return;
+
+  for (const tokenDoc of _prTokensForActor(effect.parent)) {
+    for (const groupId of groups) {
+      await _prSetDetectionModeForToken(tokenDoc, prDetectionModeIdForGroup(groupId), false);
+    }
   }
 });

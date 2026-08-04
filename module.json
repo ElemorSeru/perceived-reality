@@ -2,10 +2,10 @@
   "id": "perceived-reality",
   "title": "GM Tools: Perceived Reality",
   "description": "Assign tokens, tiles, doors, and lights to perception groups. Only players whose tokens share a matching group can see them, enabling hallucinations, illusions, and other subjective realities without breaking the shared canvas.",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "compatibility": {
-    "minimum": "12",
-    "verified": "12"
+    "minimum": "12.328",
+    "verified": "14"
   },
   "authors": [
     {
@@ -17,6 +17,7 @@
   "scripts": [
     "scripts/constants.js",
     "scripts/settings.js",
+    "scripts/actor-picker.js",
     "scripts/status-effects.js",
     "scripts/detection-mode.js",
     "scripts/tile-visibility.js",
@@ -25,10 +26,20 @@
     "scripts/token-visibility.js",
     "scripts/token-config-hook.js",
     "scripts/token-hud-button.js",
-    "scripts/main.js"
+    "scripts/moment-data.js",
+    "scripts/token-disguise.js",
+    "scripts/moment-fx.js",
+    "scripts/moment-overlay.js",
+    "scripts/moment-runner.js",
+    "scripts/moment-builder.js",
+    "scripts/moment-catalog.js",
+    "scripts/main.js",
+    "scripts/update-checker.js"
   ],
   "styles": [
-    "styles/perceived-reality.css"
+    "styles/perceived-reality.css",
+    "styles/moment.css",
+    "styles/update-checker.css"
   ],
   "esmodules": [],
   "languages": [
@@ -40,9 +51,9 @@
     }
   ],
   "packs": [],
-  "dependencies": [],
   "license": "",
   "url": "https://github.com/ElemorSeru/perceived-reality",
   "manifest": "https://github.com/ElemorSeru/perceived-reality/releases/latest/download/module.json",
-  "download": "https://github.com/ElemorSeru/perceived-reality/releases/latest/download/module.zip"
+  "download": "https://github.com/ElemorSeru/perceived-reality/releases/latest/download/module.zip",
+  "socket": true
 }

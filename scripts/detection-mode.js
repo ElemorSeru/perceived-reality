@@ -1,12 +1,12 @@
-function resolveDetectionModeClass() {
+function _prResolveDetectionModeClass() {
   return foundry.canvas?.perception?.DetectionMode ?? DetectionMode;
 }
 
 Hooks.once("init", () => {
-  const BaseDetectionMode = resolveDetectionModeClass();
+  const BaseDetectionMode = _prResolveDetectionModeClass();
 
-  for (const group of PERCEPTION_GROUPS) {
-    const modeId = detectionModeIdForGroup(group.id);
+  for (const group of PR_PERCEPTION_GROUPS) {
+    const modeId = prDetectionModeIdForGroup(group.id);
 
     const mode = new (class extends BaseDetectionMode {
       constructor() {
@@ -25,10 +25,10 @@ Hooks.once("init", () => {
         const targetDoc = target?.document;
         if (!targetDoc) return false;
 
-        const targetGroups = targetDoc.getFlag(MODULE_ID, FLAG_PERCEPTION_GROUPS);
+        const targetGroups = targetDoc.getFlag(PR_MODULE_ID, PR_FLAG_PERCEPTION_GROUPS);
         if (!targetGroups || targetGroups.length === 0) return false;
 
-        if (game.user.isGM && game.settings.get(MODULE_ID, "gmSeeAll")) return true;
+        if (game.user.isGM && game.settings.get(PR_MODULE_ID, "gmSeeAll")) return true;
 
         if (!targetGroups.includes(this._prGroupId)) return false;
 
@@ -61,9 +61,9 @@ Hooks.once("ready", () => {
   const _origCanDetect = bs._canDetect.bind(bs);
   bs._canDetect = function(visionSource, target) {
     const targetDoc = target?.document;
-    const targetGroups = targetDoc?.getFlag(MODULE_ID, FLAG_PERCEPTION_GROUPS);
+    const targetGroups = targetDoc?.getFlag(PR_MODULE_ID, PR_FLAG_PERCEPTION_GROUPS);
     if (targetGroups && targetGroups.length > 0) {
-      if (game.user.isGM && game.settings.get(MODULE_ID, "gmSeeAll")) return true;
+      if (game.user.isGM && game.settings.get(PR_MODULE_ID, "gmSeeAll")) return true;
       return false;
     }
     return _origCanDetect(visionSource, target);

@@ -1,0 +1,62 @@
+.header-control.pr-update-badge {
+  color: #f2c14e;
+}
+
+.header-control.pr-update-badge::before {
+  filter: drop-shadow(0 0 3px rgba(242, 193, 78, 0.65));
+}
+
+.header-control.pr-update-badge:hover {
+  color: #ffd772;
+}
+
+.pr-update-dialog .pr-update-changelog {
+  font-size: 13px;
+  color: var(--pr-mb-text, #ddd);
+  overflow-y: auto;
+  max-height: 60vh;
+  padding-right: 4px;
+}
+
+.pr-update-release {
+  padding-bottom: 14px;
+  margin-bottom: 14px;
+  border-bottom: 1px solid var(--pr-mb-border, #3a3a3a);
+}
+
+.pr-update-release:last-of-type { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
+
+.pr-update-release-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.pr-update-version { font-size: 14px; font-weight: 700; color: #eee; }
+.pr-update-date { font-size: 11px; color: var(--pr-mb-muted, #999); }
+
+.pr-update-changelog h4 {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--pr-mb-info, #2f92fd);
+  margin: 8px 0 4px;
+}
+
+.pr-update-changelog ul { margin: 0 0 6px; padding-left: 18px; }
+.pr-update-changelog li { margin-bottom: 3px; line-height: 1.45; }
+.pr-update-changelog p { margin: 0 0 6px; line-height: 1.45; }
+
+.pr-update-foot {
+  margin-top: 4px;
+  text-align: right;
+}
+
+.pr-update-foot a {
+  font-size: 11px;
+  color: var(--pr-mb-info, #2f92fd);
+  text-decoration: none;
+}
+
+.pr-update-foot a:hover { text-decoration: underline; }
