@@ -17,6 +17,12 @@ window.PR_PERCEPTION_GROUPS = [
   { id: "group-f", labelKey: "perceived-reality.Groups.F.Label", icon: "modules/perceived-reality/assets/icons/group-f.svg" },
 ];
 
+// v14 deletes by operator; `-=` is gone in v16
+window.prUnsetKey = function(parent, key) {
+  const Deletion = foundry.data?.operators?.ForcedDeletion;
+  return Deletion ? { [`${parent}.${key}`]: new Deletion() } : { [`${parent}.-=${key}`]: null };
+};
+
 window.prStatusIdForGroup = function(groupId) {
   return `${PR_MODULE_ID}.${groupId}`;
 };
@@ -39,6 +45,36 @@ window.prGetDefaultPlayerToken = function() {
 };
 
 // Stronger GM preview mismatch indicator
+// one pass per frame, controlToken still runs immediately
+const _prRefreshQueue = new Set();
+let _prRefreshFrame = 0;
+
+function _prRunRefreshQueue() {
+  _prRefreshFrame = 0;
+  const names = Array.from(_prRefreshQueue);
+  _prRefreshQueue.clear();
+  for (const name of names) {
+    try {
+      window[name]?.();
+    } catch (err) {
+      console.error(`[perceived-reality] ${name} failed during a coalesced refresh`, err);
+    }
+  }
+}
+
+window.prRequestRefresh = function(name) {
+  if (!name) return;
+  _prRefreshQueue.add(name);
+  if (_prRefreshFrame) return;
+  _prRefreshFrame = requestAnimationFrame(_prRunRefreshQueue);
+};
+
+// only used by tests and teardown
+window.prFlushRefreshQueue = function() {
+  if (_prRefreshFrame) cancelAnimationFrame(_prRefreshFrame);
+  _prRunRefreshQueue();
+};
+
 window.prApplyDesaturation = function(obj, desaturate) {
   if (!obj) return;
 

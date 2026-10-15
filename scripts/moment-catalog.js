@@ -156,11 +156,25 @@ Hooks.once("init", function() {
       setTimeout(() => document.addEventListener("pointerdown", onOutside, true), 0);
     }
 
-    _runMoment(moment) {
-      const scene = game.scenes?.active ?? canvas?.scene;
+    async _runMoment(moment) {
+      const scene = canvas?.scene ?? game.scenes?.active;
       if (!scene) {
         ui.notifications.warn(loc("Notify.NoScene"));
         return;
+      }
+      const missing = prMomentMissingTargets(moment, scene);
+      if (missing) {
+        const play = await resolveDialogClass().wait({
+          classes: ["pr-mb-dialog"],
+          window: { title: loc("PlayMissingTitle") },
+          content: `<p>${game.i18n.format("perceived-reality.Moments.PlayMissingContent", { count: missing, scene: prEscapeHtml(scene.name) })}</p>`,
+          buttons: [
+            { action: "play", label: loc("PlayAnyway"), icon: "fa-solid fa-play", default: true, callback: () => true },
+            { action: "cancel", label: loc("PlayCancel"), icon: "fa-solid fa-xmark", callback: () => false }
+          ],
+          rejectClose: false
+        });
+        if (!play) return;
       }
       prRunMoment(foundry.utils.deepClone(moment), scene);
     }

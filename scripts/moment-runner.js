@@ -41,9 +41,32 @@ function _prTrackSegments(moment, type, evaluate) {
   return segments;
 }
 
+let _prRunTimers = [];
+let _prRunSerial = 0;
+let _prRunFx = new Set();
+
+function _prLater(fn, ms) {
+  _prRunTimers.push(setTimeout(fn, ms));
+}
+
+function _prCancelRun() {
+  for (const id of _prRunTimers) clearTimeout(id);
+  _prRunTimers = [];
+  _prRunSerial++;
+}
+
+window.prCurrentRunId = function() {
+  return _prRunSerial;
+};
+
+function _prEndRunFx(record) {
+  if (!_prRunFx.delete(record)) return;
+  prFxStopGlobal(record);
+}
+
 function _prScheduleTrack(moment, type, evaluate, playFn, stopFn) {
   for (const seg of _prTrackSegments(moment, type, evaluate)) {
-    setTimeout(() => {
+    _prLater(() => {
       if (seg.winner) playFn(seg.winner, seg.end - seg.start);
       else stopFn();
     }, seg.start * 1000);
@@ -57,6 +80,8 @@ function _prNarrationSpecificity(clip, moment, atTime) {
 }
 
 function _prPresentMoment(moment) {
+  _prCancelRun();
+
   _prScheduleTrack(moment, "narration",
     (clip, atTime) => ({ eligible: true, specificity: _prNarrationSpecificity(clip, moment, atTime) }),
     (clip, durSec) => prPlayNarrationClip(clip.config, durSec, moment, clip.start ?? 0),
@@ -72,13 +97,13 @@ function _prPresentMoment(moment) {
   for (const clip of moment.clips ?? []) {
     const delay = (clip.start ?? 0) * 1000;
     if (clip.type === "sound") {
-      setTimeout(() => {
+      _prLater(() => {
         if (prAudienceMatch(clip.config.audience, clip.config.group, moment, clip.start ?? 0)) {
           prPlaySoundClip(clip.config, clip.dur);
         }
       }, delay);
     } else if (clip.type === "fx" && clip.config.audience !== "all") {
-      setTimeout(() => {
+      _prLater(() => {
         if (prAudienceMatch(clip.config.audience, clip.config.group, moment, clip.start ?? 0)) {
           prFxPlayLocal(clip);
         }
@@ -88,8 +113,14 @@ function _prPresentMoment(moment) {
 }
 
 async function _prClearAtmosphereGroup(scene, group) {
-  await scene.update({ [`flags.${PR_MODULE_ID}.${PR_ATMO_FLAG}.-=${group}`]: null });
+  await scene.update(prUnsetKey(`flags.${PR_MODULE_ID}.${PR_ATMO_FLAG}`, group));
   if (scene.id === canvas?.scene?.id) prApplyAtmosphereFromScene();
+}
+
+function _prAtmoLeavesBehind(was, now) {
+  if (!was || typeof was !== "object") return true;
+  return Object.keys(was).some(k => !(k in now)
+    || (was[k] && typeof was[k] === "object" && now[k] && typeof now[k] === "object" && _prAtmoLeavesBehind(was[k], now[k])));
 }
 
 async function _prExecuteStateClip(clip, scene) {
@@ -99,12 +130,11 @@ async function _prExecuteStateClip(clip, scene) {
       for (const tokenId of cfg.tokenIds ?? []) {
         const tokenDoc = scene.tokens.get(tokenId);
         if (!tokenDoc) continue;
-        const grant = cfg.action === "grant";
-        await _prSetDetectionModeForToken(tokenDoc, prDetectionModeIdForGroup(cfg.group), grant);
         const current = new Set(tokenDoc.getFlag(PR_MODULE_ID, "viewerGroups") ?? []);
-        if (grant) current.add(cfg.group);
+        if (cfg.action === "grant") current.add(cfg.group);
         else current.delete(cfg.group);
         await tokenDoc.setFlag(PR_MODULE_ID, "viewerGroups", Array.from(current));
+        await prReconcileDetectionModes(tokenDoc);
       }
     } else if (clip.type === "object") {
       const collections = { token: scene.tokens, tile: scene.tiles, light: scene.lights, wall: scene.walls };
@@ -120,17 +150,24 @@ async function _prExecuteStateClip(clip, scene) {
       }
     } else if (clip.type === "atmosphere") {
       if (cfg.preset === "none") {
-        await scene.update({ [`flags.${PR_MODULE_ID}.${PR_ATMO_FLAG}.-=${cfg.group}`]: null });
+        await scene.update(prUnsetKey(`flags.${PR_MODULE_ID}.${PR_ATMO_FLAG}`, cfg.group));
       } else {
+        const atmo = prAtmoToV2(cfg);
+        const record = foundry.utils.deepClone({
+          v: 2, preset: atmo.preset, mood: atmo.mood,
+          bg: atmo.bg, fg: atmo.fg, pt: atmo.pt, glow: atmo.glow, ptGlow: atmo.ptGlow
+        });
+        // setFlag merges so replace it if old fields would staY
+        const stored = scene.getFlag(PR_MODULE_ID, PR_ATMO_FLAG)?.[cfg.group];
+        if (stored !== undefined && _prAtmoLeavesBehind(stored, record)) {
+          await scene.update(prUnsetKey(`flags.${PR_MODULE_ID}.${PR_ATMO_FLAG}`, cfg.group));
+        }
         const byGroup = foundry.utils.deepClone(scene.getFlag(PR_MODULE_ID, PR_ATMO_FLAG) ?? {});
-        byGroup[cfg.group] = {
-          preset: cfg.preset, sat: cfg.sat, bright: cfg.bright, hue: cfg.hue,
-          tintOn: cfg.tintOn, tint: cfg.tint, tintA: cfg.tintA, vig: cfg.vig, vigS: cfg.vigS,
-          motes: cfg.motes, moteC: cfg.moteC, moteCount: cfg.moteCount, moteDir: cfg.moteDir, moteAngle: cfg.moteAngle
-        };
+        byGroup[cfg.group] = record;
         await scene.setFlag(PR_MODULE_ID, PR_ATMO_FLAG, byGroup);
       }
       if (scene.id === canvas?.scene?.id) prApplyAtmosphereFromScene();
+      // separate timer so it still clears after the run ends
       if (cfg.preset !== "none" && cfg.autoEnd > 0) {
         setTimeout(() => _prClearAtmosphereGroup(scene, cfg.group), cfg.autoEnd * 1000);
       }
@@ -184,14 +221,17 @@ window.prRunMoment = function(moment, scene) {
         console.info("[perceived-reality] fxmaster not active; skipping fx clip");
         continue;
       }
-      setTimeout(async () => {
+      _prLater(async () => {
         const record = await prFxPlayGlobal(clip, scene);
-        if (record) setTimeout(() => prFxStopGlobal(record), Math.max(0.5, clip.dur ?? 0) * 1000);
+        if (!record) return;
+        _prRunFx.add(record);
+        // separate timer so it ends even if replaced
+        setTimeout(() => _prEndRunFx(record), Math.max(0.5, clip.dur ?? 0) * 1000);
       }, (clip.start ?? 0) * 1000);
       continue;
     }
     if (PR_CLIP_ROW[clip.type] !== "state") continue;
-    setTimeout(() => _prExecuteStateClip(clip, scene), (clip.start ?? 0) * 1000);
+    _prLater(() => _prExecuteStateClip(clip, scene), (clip.start ?? 0) * 1000);
   }
 };
 
@@ -231,6 +271,45 @@ async function _prMigrateSceneMoments() {
   await game.settings.set(PR_MODULE_ID, "momentLibraryMigrated", true);
 }
 
+async function _prMigrateAtmospheres() {
+  // active GM only so writes dont overlap
+  if (game.user !== game.users.activeGM) return;
+  if (game.settings.get(PR_MODULE_ID, "atmosphereSections")) return;
+
+  const all = prGetAllMoments();
+  let clips = 0;
+  for (const moment of all) {
+    for (const clip of moment.clips ?? []) {
+      if (clip.type !== "atmosphere" || clip.config?.v === 2) continue;
+      clip.config = prAtmoToV2(clip.config);
+      clips++;
+    }
+  }
+  if (clips) await prSaveAllMoments(all);
+
+  let scenes = 0;
+  for (const scene of game.scenes?.contents ?? []) {
+    const byGroup = scene.getFlag(PR_MODULE_ID, PR_ATMO_FLAG);
+    if (!byGroup || typeof byGroup !== "object") continue;
+    const stale = Object.values(byGroup).some(cfg => cfg && typeof cfg === "object" && cfg.v !== 2);
+    if (!stale) continue;
+    const next = {};
+    for (const [group, cfg] of Object.entries(byGroup)) {
+      next[group] = cfg && typeof cfg === "object" ? prAtmoToV2(cfg) : cfg;
+    }
+    // setFlag merges so unset it first to replace it
+    await scene.unsetFlag(PR_MODULE_ID, PR_ATMO_FLAG);
+    await scene.setFlag(PR_MODULE_ID, PR_ATMO_FLAG, next);
+    scenes++;
+  }
+
+  await game.settings.set(PR_MODULE_ID, "atmosphereSections", true);
+  if (clips || scenes) {
+    console.log("[perceived-reality] Atmospheres updated to the current format: " +
+      clips + " saved clip(s), " + scenes + " scene(s).");
+  }
+}
+
 Hooks.on("deleteScene", async function(scene) {
   if (!game.user.isGM) return;
   const all = prGetAllMoments();
@@ -245,12 +324,10 @@ async function _prClearScenePerception(scene) {
   if (!scene) return;
 
   for (const tokenDoc of scene.tokens ?? []) {
-    for (const group of PR_PERCEPTION_GROUPS) {
-      await _prSetDetectionModeForToken(tokenDoc, prDetectionModeIdForGroup(group.id), false);
-    }
     if (tokenDoc.getFlag(PR_MODULE_ID, "viewerGroups")) {
       await tokenDoc.unsetFlag(PR_MODULE_ID, "viewerGroups");
     }
+    await prReconcileDetectionModes(tokenDoc);
     if (tokenDoc.getFlag(PR_MODULE_ID, PR_FLAG_PERCEPTION_GROUPS)) {
       await tokenDoc.unsetFlag(PR_MODULE_ID, PR_FLAG_PERCEPTION_GROUPS);
     }
@@ -265,15 +342,32 @@ async function _prClearScenePerception(scene) {
   }
 }
 
+window.prStopMomentLocal = function() {
+  _prCancelRun();
+  prStopTransitionLocal();
+  prClearNarrationLocal();
+  prFxStopAllLocal();
+};
+
+window.prStopMoment = function() {
+  if (!game.user.isGM) return;
+  game.socket.emit(_PR_SOCKET, { type: "pr-stop-moment" });
+  prStopMomentLocal();
+  for (const record of [..._prRunFx]) _prEndRunFx(record);
+  ui.notifications.info(game.i18n.localize("perceived-reality.Moments.Notify.Stopped"));
+};
+
 window.prClearAllMomentEffects = async function() {
   if (!game.user.isGM) return;
   const scene = canvas?.scene;
   if (scene) await scene.unsetFlag(PR_MODULE_ID, PR_ATMO_FLAG);
 
+  _prRunFx.clear();
   const ledger = _prFxLedgerRead();
   for (const record of ledger) await prFxStopGlobal(record);
 
   game.socket.emit(_PR_SOCKET, { type: "pr-clear-overlay" });
+  prStopMomentLocal();
   prClearOverlayLocal();
   ui.notifications.info(game.i18n.localize("perceived-reality.Moments.Notify.Cleared"));
 };
@@ -315,14 +409,17 @@ window.prClearAllDisguises = async function() {
 Hooks.once("ready", async function() {
   game.socket.on(_PR_SOCKET, function(data) {
     if (data?.type === "pr-run-moment" && data.moment) _prPresentMoment(data.moment);
-    if (data?.type === "pr-clear-overlay") prClearOverlayLocal();
+    if (data?.type === "pr-clear-overlay") { prStopMomentLocal(); prClearOverlayLocal(); }
+    if (data?.type === "pr-stop-moment") prStopMomentLocal();
   });
 
   await _prMigrateSceneMoments();
+  await _prMigrateAtmospheres();
 
   window.PerceivedRealityMoments = {
     open: (scene) => prOpenMomentBuilder(scene),
     run: (nameOrId, scene) => prRunMomentByName(nameOrId, scene),
+    stop: () => prStopMoment(),
     catalog: () => prOpenMomentCatalog()
   };
   const mod = game.modules.get(PR_MODULE_ID);
@@ -367,21 +464,31 @@ function _prSceneContextEntryV12(entries) {
   });
 }
 
+// v13 reads name, condition, and callback. v14 label, visible, and onClick
 function _prSceneContextEntryV13(entries) {
+  // navigation entries have sceneId directory entries entryId
+  const openBuilder = target => {
+    const el = target?.[0] ?? target;
+    const id = el?.dataset?.sceneId ?? el?.dataset?.entryId;
+    const scene = id ? game.scenes.get(id) : null;
+    prOpenMomentBuilder(scene ?? undefined);
+  };
   entries.push({
+    name: "perceived-reality.Moments.MenuOpen",
     label: "perceived-reality.Moments.MenuOpen",
     icon: '<i class="fa-solid fa-wand-sparkles"></i>',
+    condition: () => game.user.isGM,
     visible: () => game.user.isGM,
-    onClick: (event, target) => {
-      const id = target?.dataset?.entryId;
-      const scene = id ? game.scenes.get(id) : null;
-      prOpenMomentBuilder(scene ?? undefined);
-    }
+    callback: openBuilder,
+    onClick: (event, target) => openBuilder(target)
   });
   entries.push({
+    name: "perceived-reality.Moments.CatalogMenuOpen",
     label: "perceived-reality.Moments.CatalogMenuOpen",
     icon: '<i class="fa-solid fa-table-cells-large"></i>',
+    condition: () => game.user.isGM,
     visible: () => game.user.isGM,
+    callback: () => prOpenMomentCatalog(),
     onClick: () => prOpenMomentCatalog()
   });
 }

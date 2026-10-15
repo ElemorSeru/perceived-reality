@@ -1,5 +1,7 @@
 window.PRMomentBuilderClass = null;
 window.PR_LANE_PX = 44;
+window.PR_MARKER_PX = 20;
+window.PR_MARKER_LANE_PX = 22;
 
 Hooks.once("init", function() {
   const AppV2 = foundry.applications?.api?.ApplicationV2;
@@ -29,6 +31,22 @@ Hooks.once("init", function() {
   }
 
   function loc(key) { return game.i18n.localize(`perceived-reality.Moments.${key}`); }
+
+  function fmt(key, data) { return game.i18n.format(`perceived-reality.Moments.${key}`, data); }
+
+  async function askChoice(titleKey, contentHtml, yes, no) {
+    return await resolveDialogClass().wait({
+      classes: ["pr-mb-dialog"],
+      window: { title: loc(titleKey) },
+      content: contentHtml,
+      buttons: [
+        { action: "yes", label: loc(yes.label), icon: yes.icon, default: true, callback: () => true },
+        { action: "no", label: loc(no.label), icon: no.icon, callback: () => false }
+      ],
+      rejectClose: false
+    });
+  }
+
 
   function resolveDialogClass() {
     return foundry.applications?.api?.DialogV2;
@@ -73,7 +91,21 @@ Hooks.once("init", function() {
       s.appendChild(o);
     }
     s.addEventListener("change", () => onChange(s.value));
-    return s;
+    return prEnhanceSelect(s);
+  }
+
+  function mkHelp(key) {
+    const text = game.i18n.localize("perceived-reality.Moments.Help." + key);
+    const icon = mkEl("i", "fa-solid fa-circle-info pr-mb-help");
+    icon.dataset.tooltip = text;
+    icon.setAttribute("aria-label", text);
+    return icon;
+  }
+
+  function withHelp(field, key) {
+    const label = (field.tagName === "LABEL") ? field : field.querySelector("label");
+    label?.appendChild(mkHelp(key));
+    return field;
   }
 
   function mkField(label, control) {
@@ -132,26 +164,137 @@ Hooks.once("init", function() {
       super(options);
       this._scene = pickerScene;
       this._groupSceneId = groupSceneId !== undefined ? groupSceneId : (pickerScene?.id ?? null);
-      this._moments = prGetMomentsForScene(this._groupSceneId);
-      if (!this._moments.length) this._moments.push(prNewMoment(this._groupSceneId));
-      this._mi = 0;
-      if (initialMomentId) {
-        const idx = this._moments.findIndex(m => m.id === initialMomentId);
-        if (idx !== -1) this._mi = idx;
-      }
-      this._selId = null;
+      this._viewedId = canvas?.scene?.id ?? null;
+      this._loadGroup(initialMomentId);
+      PRMomentBuilder.current = this;
       this._pps = ZOOM_DEFAULT;
       this._tlScrollLeft = 0;
-      window.prViewAsOverride = { mode: "all" };
+      prApplyPerceptionView(null);
     }
 
     async _onClose(options) {
-      window.prViewAsOverride = { mode: "all" };
+      if (PRMomentBuilder.current === this) PRMomentBuilder.current = null;
+      prApplyPerceptionView(null);
       prApplyAtmosphereFromScene();
+      this._playRun = null;
       return super._onClose(options);
     }
 
     get momentData() { return this._moments[this._mi]; }
+
+    _loadGroup(momentId) {
+      this._moments = prGetMomentsForScene(this._groupSceneId);
+      if (!this._moments.length) this._moments.push(prNewMoment(this._groupSceneId));
+      this._mi = Math.max(0, this._moments.findIndex(m => m.id === momentId));
+      this._selId = null;
+      this._baseline = JSON.stringify(this._moments);
+    }
+
+    _groupName(groupId) {
+      if (!groupId) return loc("CatalogUnassigned");
+      return game.scenes.get(groupId)?.name ?? loc("UnknownScene");
+    }
+
+    async _saveGroup() {
+      await prSaveMomentsForScene(this._groupSceneId, this._moments);
+      this._baseline = JSON.stringify(this._moments);
+    }
+
+    async _settleUnsaved() {
+      if (JSON.stringify(this._moments) === this._baseline) return;
+      const save = await askChoice("SwitchTitle",
+        `<p>${fmt("SwitchContent", { group: prEscapeHtml(this._groupName(this._groupSceneId)) })}</p>`,
+        { label: "SwitchSave", icon: "fa-solid fa-floppy-disk" },
+        { label: "SwitchDiscard", icon: "fa-solid fa-xmark" });
+      if (save !== false) await this._saveGroup();
+    }
+
+    async _switchGroup(groupId, momentId) {
+      await this._settleUnsaved();
+      this._groupSceneId = groupId;
+      this._scene = (groupId && game.scenes.get(groupId)) || canvas?.scene || this._scene;
+      this._loadGroup(momentId);
+      this._applyFit();
+      this._rebuild();
+    }
+
+    async _onViewedScene() {
+      const viewed = canvas?.scene;
+      if (!viewed || !this.rendered) return;
+      const was = this._viewedId;
+      this._viewedId = viewed.id;
+      if (was === viewed.id) return;
+      if (this._groupSceneId && this._groupSceneId === was) {
+        await this._switchGroup(viewed.id, null);
+        return;
+      }
+      if (!this._groupSceneId) this._scene = viewed;
+      this._rebuild();
+    }
+
+    _buildMomentPicker() {
+      const select = document.createElement("select");
+      select.className = "pr-mb-moment-pick";
+      const viewedId = canvas?.scene?.id ?? null;
+      const saved = new Map();
+      for (const m of prGetAllMoments()) {
+        const key = m.sceneId ?? null;
+        if (key === this._groupSceneId) continue;
+        if (!saved.has(key)) saved.set(key, []);
+        saved.get(key).push(m);
+      }
+      const keys = [];
+      if (viewedId) keys.push(viewedId);
+      keys.push(null);
+      const others = new Set([...saved.keys(), this._groupSceneId].filter(k => k && k !== viewedId));
+      keys.push(...[...others].sort((a, b) => this._groupName(a).localeCompare(this._groupName(b))));
+
+      for (const key of keys) {
+        const group = document.createElement("optgroup");
+        if (key === viewedId) {
+          group.label = fmt("GroupThisScene", { name: this._groupName(key) });
+          group.dataset.icon = "fa-solid fa-location-dot";
+          group.dataset.tone = "here";
+        } else if (key === null) {
+          group.label = loc("CatalogUnassigned");
+          group.dataset.icon = "fa-solid fa-globe";
+          group.dataset.tone = "any";
+        } else {
+          group.label = this._groupName(key);
+          group.dataset.icon = "fa-solid fa-map";
+        }
+        const entries = key === this._groupSceneId
+          ? this._moments.map((m, i) => ["here:" + i, m.name])
+          : (saved.get(key) ?? []).map(m => ["id:" + m.id, m.name]);
+        for (const [value, name] of entries) {
+          const option = document.createElement("option");
+          option.value = value;
+          option.textContent = name || loc("NamePlaceholder");
+          group.appendChild(option);
+        }
+        if (!entries.length) {
+          const empty = document.createElement("option");
+          empty.disabled = true;
+          empty.textContent = loc("GroupEmpty");
+          group.appendChild(empty);
+        }
+        select.appendChild(group);
+      }
+      select.value = "here:" + this._mi;
+      select.addEventListener("change", () => {
+        const value = select.value;
+        if (value.startsWith("here:")) {
+          this._mi = parseInt(value.slice(5));
+          this._selId = null;
+          this._applyFit();
+          this._rebuild();
+          return;
+        }
+        const id = value.slice(3);
+        this._switchGroup(prGetMomentById(id)?.sceneId ?? null, id);
+      });
+      return prEnhanceSelect(select);
+    }
 
     async _prepareContext() { return {}; }
 
@@ -210,18 +353,27 @@ Hooks.once("init", function() {
 
       const left = mkEl("div", "pr-mb-toolbar-left");
 
-      const groupScene = this._groupSceneId ? game.scenes.get(this._groupSceneId) : null;
-      const groupLabel = mkEl("div", "pr-mb-group-label", groupScene?.name ?? loc("CatalogUnassigned"));
+      const viewed = canvas?.scene ?? null;
+      const groupLabel = mkEl("div", "pr-mb-group-label", this._groupName(this._groupSceneId));
       groupLabel.title = loc("GroupLabelHint");
+      if (this._groupSceneId && this._groupSceneId !== viewed?.id) {
+        groupLabel.classList.add("pr-mb-group-away");
+        groupLabel.prepend(mkEl("i", "fa-solid fa-triangle-exclamation"));
+        groupLabel.title = fmt("GroupAwayHint", { scene: this._groupName(this._groupSceneId), viewing: viewed?.name ?? "" });
+      }
       left.appendChild(groupLabel);
 
-      const momentSel = mkSelect(
-        this._moments.map((m, i) => [String(i), m.name]),
-        String(this._mi),
-        v => { this._mi = parseInt(v); this._selId = null; this._applyFit(); this._rebuild(); }
-      );
-      momentSel.classList.add("pr-mb-moment-pick");
+      const momentSel = this._buildMomentPicker();
       left.appendChild(momentSel);
+
+      const missing = prMomentMissingTargets(moment, viewed);
+      if (missing) {
+        const chip = mkEl("div", "pr-mb-missing");
+        chip.appendChild(mkEl("i", "fa-solid fa-link-slash"));
+        chip.appendChild(document.createTextNode(fmt("MissingTargets", { count: missing })));
+        chip.title = loc("MissingTargetsHint");
+        left.appendChild(chip);
+      }
 
       left.appendChild(mkEl("div", "pr-mb-toolbar-divider"));
 
@@ -252,11 +404,26 @@ Hooks.once("init", function() {
 
       const btnRun = mkIconButton("fa-play", loc("Run"), "positive");
       btnRun.addEventListener("click", async () => {
-        await prSaveMomentsForScene(this._groupSceneId, this._moments);
-        prRunMoment(foundry.utils.deepClone(this.momentData), this._scene);
+        await this._saveGroup();
+        const scene = canvas?.scene;
+        if (!scene) return;
+        const missing = prMomentMissingTargets(this.momentData, scene);
+        if (missing) {
+          const play = await askChoice("PlayMissingTitle",
+            `<p>${fmt("PlayMissingContent", { count: missing, scene: prEscapeHtml(scene.name) })}</p>`,
+            { label: "PlayAnyway", icon: "fa-solid fa-play" },
+            { label: "PlayCancel", icon: "fa-solid fa-xmark" });
+          if (!play) return;
+        }
+        prRunMoment(foundry.utils.deepClone(this.momentData), scene);
         this._animatePlayhead();
       });
       actions.appendChild(btnRun);
+
+      const btnStop = mkIconButton("fa-stop", loc("StopMoment"), "caution");
+      btnStop.title = loc("StopMomentHint");
+      btnStop.addEventListener("click", () => prStopMoment());
+      actions.appendChild(btnStop);
 
       const btnCatalog = mkIconButton("fa-table-cells-large", loc("Catalog"));
       btnCatalog.addEventListener("click", () => prOpenMomentCatalog());
@@ -276,7 +443,7 @@ Hooks.once("init", function() {
 
       const btnSave = mkIconButton("fa-floppy-disk", loc("Save"), "positive");
       btnSave.addEventListener("click", async () => {
-        await prSaveMomentsForScene(this._groupSceneId, this._moments);
+        await this._saveGroup();
         ui.notifications.info(loc("Notify.Saved"));
       });
       actions.appendChild(btnSave);
@@ -314,7 +481,8 @@ Hooks.once("init", function() {
 
       nameInput.addEventListener("change", () => {
         moment.name = nameInput.value || loc("NewMomentName");
-        momentSel.options[this._mi].textContent = moment.name;
+        const entry = [...momentSel.options].find(o => o.value === "here:" + this._mi);
+        if (entry) entry.textContent = moment.name;
       });
 
       return bar;
@@ -330,9 +498,8 @@ Hooks.once("init", function() {
         this._scene.tokens.contents.map(t => [t.id, t.name])
       );
       const select = mkSelect(options, current, v => {
-        window.prViewAsOverride = v === "all" ? { mode: "all" } : { mode: "token", tokenId: v };
+        prApplyPerceptionView(v === "all" ? { mode: "all" } : { mode: "token", tokenId: v, sceneId: this._scene.id });
         prApplyAtmosphereFromScene();
-        prRefreshTokenDisguises();
       });
       select.title = loc("ViewAsHint");
       wrap.appendChild(select);
@@ -463,11 +630,11 @@ Hooks.once("init", function() {
     }
 
     _computeLanes(clips, isMarker) {
-      if (isMarker) return { laneOf: new Map(clips.map(c => [c.id, 0])), laneCount: 1 };
+      const half = isMarker ? (PR_MARKER_PX / 2) / Math.max(1, this._pps) : 0;
       const items = clips.map(c => ({
         clip: c,
-        s: c.start,
-        e: c.start + Math.max(c.dur, 0.001)
+        s: c.start - half,
+        e: isMarker ? (c.start + half) : (c.start + Math.max(c.dur, 0.001))
       })).sort((a, b) => a.s - b.s || a.e - b.e);
 
       const laneEnds = [];
@@ -511,7 +678,9 @@ Hooks.once("init", function() {
         rowEl.appendChild(mkEl("div", "pr-mb-row-label", loc("Rows." + row)));
         const track = mkEl("div", "pr-mb-lane");
         track.style.width = width + "px";
-        track.style.height = (laneCount * PR_LANE_PX) + "px";
+        track.style.height = (isMarkerRow
+          ? (PR_LANE_PX + ((laneCount - 1) * PR_MARKER_LANE_PX))
+          : (laneCount * PR_LANE_PX)) + "px";
         track.style.backgroundSize = (this._pps / 2) + "px 100%";
 
         for (const clip of rowClips) {
@@ -572,7 +741,9 @@ Hooks.once("init", function() {
       const el = mkEl("div", isMarker ? "pr-mb-marker pr-mb-marker-" + clip.type : "pr-mb-clip pr-mb-clip-" + clip.type);
       el.dataset.clipId = clip.id;
       el.style.left = (clip.start * this._pps) + "px";
-      const top = laneIdx * PR_LANE_PX + (isMarker ? 12 : 6);
+      const top = isMarker
+        ? (12 + laneIdx * PR_MARKER_LANE_PX)
+        : (laneIdx * PR_LANE_PX + 6);
       el.style.top = top + "px";
       if (!isMarker) el.style.width = Math.max(12, clip.dur * this._pps) + "px";
       if (clip.id === this._selId) el.classList.add("pr-mb-selected");
@@ -581,9 +752,11 @@ Hooks.once("init", function() {
       if (!isMarker) {
         el.appendChild(mkEl("span", "pr-mb-clip-label", this._clipLabel(clip)));
         if (clip.type === "transition") {
+          const ph = prTransitionPhases(clip.config, clip.dur);
           const band = mkEl("div", "pr-mb-covered");
-          band.style.left = "45%";
-          band.style.width = "20%";
+          band.style.left = ((ph.easeIn / ph.total) * 100) + "%";
+          band.style.width = ((ph.hold / ph.total) * 100) + "%";
+          band.style.opacity = Math.max(0.25, prTransitionCover(clip.config) / 100);
           el.appendChild(band);
         }
         const handle = mkEl("div", "pr-mb-resize");
@@ -678,6 +851,7 @@ Hooks.once("init", function() {
         panel.appendChild(mkEl("div", "pr-mb-inspector-empty", loc("Inspector.NoSelection")));
         return panel;
       }
+      if (clip.type === "atmosphere" && clip.config?.v !== 2) clip.config = prAtmoToV2(clip.config);
 
       const head = mkEl("div", "pr-mb-inspector-head");
 
@@ -697,6 +871,7 @@ Hooks.once("init", function() {
       head.appendChild(headTop);
 
       const headFields = mkEl("div", "pr-mb-inspector-headfields");
+      const headFieldsH = (key, el) => headFields.appendChild(withHelp(el, key));
 
       const startInput = document.createElement("input");
       startInput.type = "number";
@@ -707,7 +882,7 @@ Hooks.once("init", function() {
         clip.start = prSnapTime(parseFloat(startInput.value) || 0);
         this._rebuild();
       });
-      headFields.appendChild(mkField(loc("Inspector.Start"), startInput));
+      headFieldsH("Start", mkField(loc("Inspector.Start"), startInput));
 
       if (PR_CLIP_ROW[clip.type] !== "state") {
         const durInput = document.createElement("input");
@@ -719,7 +894,7 @@ Hooks.once("init", function() {
           clip.dur = Math.max(0.5, prSnapTime(parseFloat(durInput.value) || 0.5));
           this._rebuild();
         });
-        headFields.appendChild(mkField(loc("Inspector.Duration"), durInput));
+        headFieldsH("Duration", mkField(loc("Inspector.Duration"), durInput));
       } else if (clip.type === "atmosphere") {
         const endInput = document.createElement("input");
         endInput.type = "number";
@@ -731,38 +906,69 @@ Hooks.once("init", function() {
           clip.config.autoEnd = Math.max(0, prSnapTime(parseFloat(endInput.value) || 0));
           this._rebuild();
         });
-        headFields.appendChild(mkField(loc("Inspector.AtmoAutoEnd"), endInput));
+        headFieldsH("AtmoAutoEnd", mkField(loc("Inspector.AtmoAutoEnd"), endInput));
       }
 
       head.appendChild(headFields);
       panel.appendChild(head);
 
       const grid = mkEl("div", "pr-mb-inspector-grid");
+      const gridH = (key, el) => grid.appendChild(withHelp(el, key));
       panel.appendChild(grid);
       const cfg = clip.config;
 
       if (clip.type === "transition") {
         const styleOptions = Object.keys(PR_TRANSITIONS).map(id => [id, game.i18n.localize(PR_TRANSITIONS[id].labelKey)]);
-        grid.appendChild(mkField(loc("Inspector.Style"), mkSelect(styleOptions, cfg.style, v => {
+        gridH("Style", mkField(loc("Inspector.Style"), mkSelect(styleOptions, cfg.style, v => {
           const t = PR_TRANSITIONS[v];
-          Object.assign(cfg, { style: v, c1: t.c1, c2: t.c2, count: t.count, blur: t.blur, intensity: t.intensity });
+          Object.assign(cfg, { style: v, c1: t.c1, c2: t.c2, count: t.count, blur: t.blur, intensity: t.intensity, cover: t.cover });
+          delete cfg.easeIn;
+          delete cfg.hold;
+          delete cfg.from;
+          delete cfg.to;
+          delete cfg.tilt;
+          delete cfg.sweep;
           this._rebuild();
         })));
         this._appendAudienceFields(grid, cfg);
-        grid.appendChild(mkColor(loc("Inspector.PrimaryColor"), cfg.c1, v => { cfg.c1 = v; }));
-        grid.appendChild(mkColor(loc("Inspector.BackdropColor"), cfg.c2, v => { cfg.c2 = v; }));
-        grid.appendChild(mkRange(loc("Inspector.Particles"), 0, 70, 1, cfg.count, "", v => { cfg.count = v; }));
-        grid.appendChild(mkRange(loc("Inspector.SceneBlur"), 0, 14, 1, cfg.blur, "px", v => { cfg.blur = v; }));
-        grid.appendChild(mkRange(loc("Inspector.Intensity"), 20, 100, 5, cfg.intensity, "%", v => { cfg.intensity = v; }));
+        if (PR_TRANSITIONS[cfg.style]?.fx !== "sheen") {
+          gridH("PrimaryColor", mkColor(loc("Inspector.PrimaryColor"), cfg.c1, v => { cfg.c1 = v; }));
+        }
+        gridH("BackdropColor", mkColor(loc("Inspector.BackdropColor"), cfg.c2, v => { cfg.c2 = v; }));
+        gridH("Particles", mkRange(loc("Inspector.Particles"), 0, 70, 1, cfg.count, "", v => { cfg.count = v; }));
+        gridH("SceneBlur", mkRange(loc("Inspector.SceneBlur"), 0, 14, 1, cfg.blur, "px", v => { cfg.blur = v; }));
+        gridH("Intensity", mkRange(loc("Inspector.Intensity"), 20, 100, 5, cfg.intensity, "%", v => { cfg.intensity = v; }));
+        gridH("Cover", mkRange(loc("Inspector.Cover"), 0, 100, 5, prTransitionCover(cfg), "%", v => {
+          cfg.cover = v;
+          this._rebuild();
+        }));
+        if (PR_TRANSITIONS[cfg.style]?.fx === "sheen") {
+          const sweep = prSheenSweep(cfg);
+          const sideOptions = [
+            ["left", loc("Inspector.SideLeft")],
+            ["right", loc("Inspector.SideRight")],
+            ["top", loc("Inspector.SideTop")],
+            ["bottom", loc("Inspector.SideBottom")]
+          ];
+          gridH("SheenFrom", mkField(loc("Inspector.SheenFrom"), mkSelect(sideOptions, sweep.from, v => { cfg.from = v; })));
+          gridH("SheenTo", mkField(loc("Inspector.SheenTo"), mkSelect(sideOptions, sweep.to, v => { cfg.to = v; })));
+          gridH("SheenTilt", mkRange(loc("Inspector.SheenTilt"), 0, 355, 5, sweep.tilt, "deg", v => { cfg.tilt = v; }));
+          gridH("SheenCascade", mkRange(loc("Inspector.SheenCascade"), 30, 300, 5, Math.round(sweep.sweep * 100), "%", v => { cfg.sweep = v; }));
+        }
+        const shape = prTransitionPhases(cfg, clip.dur);
+        gridH("EaseIn", mkRange(loc("Inspector.EaseIn"), 0, Math.max(0.5, clip.dur), 0.1,
+          Number(shape.easeIn.toFixed(1)), "s", v => { cfg.easeIn = v; this._rebuild(); }));
+        gridH("Hold", mkRange(loc("Inspector.Hold"), 0, Math.max(0.5, clip.dur), 0.1,
+          Number(shape.hold.toFixed(1)), "s", v => { cfg.hold = v; this._rebuild(); }));
       } else if (clip.type === "narration") {
         const taDefault = document.createElement("textarea");
         taDefault.value = cfg.textDefault ?? "";
         taDefault.addEventListener("input", () => { cfg.textDefault = taDefault.value; });
-        grid.appendChild(mkField(loc("Inspector.Text"), taDefault));
+        gridH("Text", mkField(loc("Inspector.Text"), taDefault));
 
         const perGroup = cfg.perGroup ?? (cfg.perGroup = {});
         const overridesWrap = mkEl("div", "pr-mb-field pr-mb-narration-overrides");
-        overridesWrap.appendChild(mkEl("label", "", loc("Inspector.GroupOverrides")));
+        overridesWrap.appendChild(withHelp(mkEl("label", "", loc("Inspector.GroupOverrides")), "GroupOverrides"));
 
         for (const group of PR_PERCEPTION_GROUPS) {
           if (!(group.id in perGroup)) continue;
@@ -799,7 +1005,7 @@ Hooks.once("init", function() {
         grid.appendChild(overridesWrap);
       } else if (clip.type === "sound") {
         const pathWrap = mkEl("div", "pr-mb-field pr-mb-path");
-        pathWrap.appendChild(mkEl("label", "", loc("Inspector.SoundPath")));
+        pathWrap.appendChild(withHelp(mkEl("label", "", loc("Inspector.SoundPath")), "SoundPath"));
         const pathRow = mkEl("div", "pr-mb-path-row");
         const pathInput = document.createElement("input");
         pathInput.type = "text";
@@ -821,8 +1027,8 @@ Hooks.once("init", function() {
         pathRow.appendChild(browse);
         pathWrap.appendChild(pathRow);
         grid.appendChild(pathWrap);
-        grid.appendChild(mkRange(loc("Inspector.Volume"), 0, 100, 5, Math.round((cfg.volume ?? 0.8) * 100), "%", v => { cfg.volume = v / 100; }));
-        grid.appendChild(mkField(loc("Inspector.Loop"), mkSelect([["no", loc("Inspector.LoopOff")], ["yes", loc("Inspector.LoopOn")]], cfg.loop ? "yes" : "no", v => { cfg.loop = v === "yes"; })));
+        gridH("Volume", mkRange(loc("Inspector.Volume"), 0, 100, 5, Math.round((cfg.volume ?? 0.8) * 100), "%", v => { cfg.volume = v / 100; }));
+        gridH("Loop", mkField(loc("Inspector.Loop"), mkSelect([["no", loc("Inspector.LoopOff")], ["yes", loc("Inspector.LoopOn")]], cfg.loop ? "yes" : "no", v => { cfg.loop = v === "yes"; })));
         this._appendAudienceFields(grid, cfg);
       } else if (clip.type === "fx") {
         if (!prFxAvailable()) {
@@ -878,53 +1084,160 @@ Hooks.once("init", function() {
           }
         }
       } else if (clip.type === "perception") {
-        grid.appendChild(mkField(loc("Inspector.Action"), mkSelect([["grant", loc("Inspector.ActionGrant")], ["remove", loc("Inspector.ActionRemove")]], cfg.action, v => { cfg.action = v; })));
-        grid.appendChild(mkField(loc("Inspector.Group"), mkSelect(groupOptions(), cfg.group, v => { cfg.group = v; })));
-        grid.appendChild(this._buildTargetPicker(loc("Inspector.Tokens"), this._scene.tokens.contents.map(t => [t.id, t.name]), cfg.tokenIds, "token"));
+        gridH("PerceptionAction", mkField(loc("Inspector.Action"), mkSelect([["grant", loc("Inspector.ActionGrant")], ["remove", loc("Inspector.ActionRemove")]], cfg.action, v => { cfg.action = v; })));
+        gridH("PerceptionGroup", mkField(loc("Inspector.Group"), mkSelect(groupOptions(), cfg.group, v => { cfg.group = v; })));
+        gridH("PerceptionTargets", this._buildTargetPicker(loc("Inspector.Tokens"), this._scene.tokens.contents.map(t => [t.id, t.name]), cfg.tokenIds, "token"));
       } else if (clip.type === "object") {
-        grid.appendChild(mkField(loc("Inspector.TargetType"), mkSelect(
+        gridH("TargetType", mkField(loc("Inspector.TargetType"), mkSelect(
           [["token", loc("Inspector.Tokens")], ["tile", loc("Inspector.Tiles")], ["light", loc("Inspector.Lights")], ["wall", loc("Inspector.Doors")]],
           cfg.targetType,
           v => { cfg.targetType = v; cfg.ids = []; this._rebuildInspector(); }
         )));
-        grid.appendChild(mkField(loc("Inspector.Action"), mkSelect([["add", loc("Inspector.ActionAdd")], ["remove", loc("Inspector.ActionRemoveGroup")]], cfg.action, v => { cfg.action = v; })));
-        grid.appendChild(mkField(loc("Inspector.Group"), mkSelect(groupOptions(), cfg.group, v => { cfg.group = v; })));
-        grid.appendChild(this._buildTargetPicker(loc("Inspector.Targets"), this._objectChoices(cfg.targetType), cfg.ids, cfg.targetType));
+        gridH("GroupingAction", mkField(loc("Inspector.Action"), mkSelect([["add", loc("Inspector.ActionAdd")], ["remove", loc("Inspector.ActionRemoveGroup")]], cfg.action, v => { cfg.action = v; })));
+        gridH("GroupingGroup", mkField(loc("Inspector.Group"), mkSelect(groupOptions(), cfg.group, v => { cfg.group = v; })));
+        gridH("GroupingTargets", this._buildTargetPicker(loc("Inspector.Targets"), this._objectChoices(cfg.targetType), cfg.ids, cfg.targetType));
       } else if (clip.type === "atmosphere") {
-        grid.appendChild(mkField(loc("Inspector.Group"), mkSelect(groupOptions(), cfg.group, v => { cfg.group = v; })));
+        gridH("AtmosphereGroup", mkField(loc("Inspector.Group"), mkSelect(groupOptions(), cfg.group, v => { cfg.group = v; })));
         const presetOptions = Object.keys(PR_ATMO_PRESETS).map(id => [id, game.i18n.localize(PR_ATMO_PRESETS[id].labelKey)]);
-        grid.appendChild(mkField(loc("Inspector.Preset"), mkSelect(presetOptions, cfg.preset, v => {
-          const p = Object.assign({}, PR_ATMO_PRESETS[v]);
-          delete p.labelKey;
-          Object.assign(cfg, p, { preset: v });
+        gridH("Preset", mkField(loc("Inspector.Preset"), mkSelect(presetOptions, cfg.preset, v => {
+          prAtmoApplyPreset(cfg, v);
           this._rebuildInspector();
         })));
-        grid.appendChild(mkRange(loc("Inspector.Saturation"), 0, 200, 5, cfg.sat, "%", v => { cfg.sat = v; }));
-        grid.appendChild(mkRange(loc("Inspector.Brightness"), 50, 150, 2, cfg.bright, "%", v => { cfg.bright = v; }));
-        grid.appendChild(mkRange(loc("Inspector.HueShift"), -180, 180, 5, cfg.hue, "deg", v => { cfg.hue = v; }));
-        const tintOn = cfg.tintOn ?? (cfg.tintA ?? 0) > 0;
-        grid.appendChild(mkField(loc("Inspector.TintEnabled"), mkSelect([["off", loc("Inspector.LoopOff")], ["on", loc("Inspector.LoopOn")]], tintOn ? "on" : "off", v => { cfg.tintOn = v === "on"; this._rebuildInspector(); })));
-        if (tintOn) {
-          grid.appendChild(mkColor(loc("Inspector.TintColor"), cfg.tint, v => { cfg.tint = v; }));
-          grid.appendChild(mkRange(loc("Inspector.TintStrength"), 0, 60, 2, cfg.tintA, "%", v => { cfg.tintA = v; }));
-        }
-        grid.appendChild(mkColor(loc("Inspector.VignetteColor"), cfg.vig, v => { cfg.vig = v; }));
-        grid.appendChild(mkRange(loc("Inspector.VignetteStrength"), 0, 100, 5, cfg.vigS, "%", v => { cfg.vigS = v; }));
-        grid.appendChild(mkField(loc("Inspector.Motes"), mkSelect([["off", loc("Inspector.LoopOff")], ["on", loc("Inspector.LoopOn")]], cfg.motes ? "on" : "off", v => { cfg.motes = v === "on"; })));
-        grid.appendChild(mkColor(loc("Inspector.MoteColor"), cfg.moteC, v => { cfg.moteC = v; }));
-        grid.appendChild(mkRange(loc("Inspector.MoteCount"), 0, 40, 1, cfg.moteCount ?? 14, "", v => { cfg.moteCount = v; }));
-        grid.appendChild(mkField(loc("Inspector.MoteDirection"), mkSelect([
-          ["up", loc("Inspector.MoteDirUp")],
-          ["down", loc("Inspector.MoteDirDown")],
-          ["angle", loc("Inspector.MoteDirAngle")]
-        ], cfg.moteDir ?? "up", v => { cfg.moteDir = v; this._rebuildInspector(); })));
-        if (cfg.moteDir === "angle") {
-          grid.appendChild(mkRange(loc("Inspector.MoteAngle"), 0, 359, 1, cfg.moteAngle ?? 0, "deg", v => { cfg.moteAngle = v; }));
+        if (cfg.preset === "none") {
+          grid.appendChild(mkEl("p", "pr-mb-hint-small", loc("Inspector.PresetNoneHint")));
+        } else {
+          const marks = [];
+          const refreshMarks = () => { for (const mark of marks) mark(); };
+          grid.addEventListener("input", refreshMarks);
+          grid.addEventListener("change", refreshMarks);
+
+          const edited = mkEl("div", "pr-mb-opt-row");
+          edited.appendChild(mkEl("span", "pr-mb-hint-small", loc("Inspector.PresetEdited")));
+          const resetPreset = mkEl("button", "", loc("Inspector.PresetReset"));
+          resetPreset.type = "button";
+          resetPreset.dataset.tone = "caution";
+          resetPreset.addEventListener("click", () => {
+            prAtmoApplyPreset(cfg, cfg.preset);
+            this._rebuildInspector();
+          });
+          edited.appendChild(resetPreset);
+          grid.appendChild(edited);
+          marks.push(() => { edited.style.display = prAtmoEdited(cfg) ? "" : "none"; });
+
+          const onOff = (on, put) => mkSelect([["off", loc("Inspector.LoopOff")], ["on", loc("Inspector.LoopOn")]], on ? "on" : "off", v => { put(v === "on"); });
+          const drawn = PR_ATMO_SECTIONS.map(key => cfg[key]).filter(s => s.style !== "none");
+          const places = new Set(drawn.map(s => s.sits));
+          const placement = places.size > 1 ? "mixed" : (places.size ? [...places][0] : cfg.bg.sits);
+          const placeOptions = [["over", loc("Inspector.SitsOver")], ["ground", loc("Inspector.SitsGround")]];
+          if (placement === "mixed") placeOptions.push(["mixed", loc("Inspector.PlacementMixed")]);
+          gridH("Placement", mkField(loc("Inspector.Placement"), mkSelect(placeOptions, placement, v => {
+            if (v === "mixed") return;
+            for (const key of PR_ATMO_SECTIONS) cfg[key].sits = v;
+            this._rebuildInspector();
+          })));
+          const lit = placement !== "ground";
+          if (lit && (prFxCan(cfg.bg.style, "glow") || prFxCan(cfg.fg.style, "glow"))) {
+            gridH("MainGlow", mkField(loc("Inspector.MainGlow"), onOff(cfg.glow, v => { cfg.glow = v; })));
+          }
+
+          const panelFor = (key, labelKey, resetKey) => {
+            const box = mkEl("fieldset", "pr-mb-atmo-section");
+            const legend = mkEl("legend", "", loc("Inspector." + labelKey));
+            const reset = mkEl("button", "pr-mb-atmo-reset");
+            reset.type = "button";
+            reset.dataset.tone = "caution";
+            reset.dataset.tooltip = loc("Inspector." + resetKey);
+            reset.setAttribute("aria-label", loc("Inspector." + resetKey));
+            reset.innerHTML = '<i class="fa-solid fa-rotate-left"></i>';
+            reset.addEventListener("click", () => {
+              prAtmoResetSection(cfg, key);
+              this._rebuildInspector();
+            });
+            legend.appendChild(reset);
+            box.appendChild(legend);
+            const inner = mkEl("div", "pr-mb-inspector-grid");
+            box.appendChild(inner);
+            grid.appendChild(box);
+            marks.push(() => { reset.disabled = !prAtmoEdited(cfg, key); });
+            return (helpKey, el) => inner.appendChild(withHelp(el, helpKey));
+          };
+
+          const moodH = panelFor("mood", "SectionMood", "ResetMood");
+          const mood = cfg.mood;
+          moodH("Saturation", mkRange(loc("Inspector.Saturation"), 0, 200, 5, mood.sat, "%", v => { mood.sat = v; }));
+          moodH("Brightness", mkRange(loc("Inspector.Brightness"), 50, 150, 2, mood.bright, "%", v => { mood.bright = v; }));
+          moodH("HueShift", mkRange(loc("Inspector.HueShift"), -180, 180, 5, mood.hue, "deg", v => { mood.hue = v; }));
+          moodH("TintEnabled", mkField(loc("Inspector.TintEnabled"), onOff(mood.tintOn, v => { mood.tintOn = v; this._rebuildInspector(); })));
+          if (mood.tintOn) {
+            moodH("TintColor", mkColor(loc("Inspector.TintColor"), mood.tint, v => { mood.tint = v; }));
+            moodH("TintStrength", mkRange(loc("Inspector.TintStrength"), 0, 60, 2, mood.tintA, "%", v => { mood.tintA = v; }));
+          }
+          moodH("VignetteColor", mkColor(loc("Inspector.VignetteColor"), mood.vig, v => { mood.vig = v; }));
+          moodH("VignetteStrength", mkRange(loc("Inspector.VignetteStrength"), 0, 100, 5, mood.vigS, "%", v => { mood.vigS = v; }));
+
+          const styleLabel = id => loc("Inspector.Style_" + id);
+          const sectionFields = (put, f, change) => {
+            const styled = key => (game.i18n.has(`${PR_MODULE_ID}.Moments.Help.${key}_${f.style}`, false) ? `${key}_${f.style}` : key);
+            const putS = (key, el) => put(styled(key), el);
+            putS("ParticleColor", mkColor(loc("Inspector.ParticleColor"), f.color, v => { change("color", v); }));
+            putS("ParticleOpacity", mkRange(loc("Inspector.ParticleOpacity"), 0, 100, 5, Math.round(f.opacity * 100), "%", v => { change("opacity", v); }));
+            if (!prFxCan(f.style, "fill")) {
+              putS("ParticleDensity", mkRange(loc("Inspector.ParticleDensity"), 10, 250, 5, Math.round(f.density * 100), "%", v => { change("density", v); }));
+            }
+            putS("ParticleSpeed", mkRange(loc("Inspector.ParticleSpeed"), 20, 300, 5, Math.round(f.speed * 100), "%", v => { change("speed", v); }));
+            if (prFxCan(f.style, "sized")) {
+              putS("ParticleSize", mkRange(loc("Inspector.ParticleSize"), 10, 250, 5, Math.round(f.size * 100), "%", v => { change("size", v); }));
+            }
+            if (prFxCan(f.style, "angled")) {
+              putS("ParticleAngle", mkRange(loc("Inspector.ParticleAngle"), 0, 355, 5, f.angle, "deg", v => { change("angle", v); }));
+            }
+            if (prFxCan(f.style, "eye")) {
+              putS("ParticleEye", mkRange(loc("Inspector.ParticleEye"), 0, 200, 5, f.eye, "%", v => { change("eye", v); }));
+            }
+            if (prFxCan(f.style, "spectrum")) {
+              putS("ParticleSpread", mkRange(loc("Inspector.ParticleSpread"), 0, 100, 5, Math.round(f.spread * 100), "%", v => { change("spread", v); }));
+            }
+            if (prFxCan(f.style, "bands")) {
+              putS("ParticleBands", mkRange(loc("Inspector.ParticleBands"), 1, 6, 1, f.bands, "", v => { change("bands", v); }));
+            }
+            if (prFxCan(f.style, "spin")) {
+              putS("ParticleSpin", mkField(loc("Inspector.ParticleSpin"), mkSelect(
+                [["cw", loc("Inspector.SpinCW")], ["ccw", loc("Inspector.SpinCCW")]],
+                f.spin,
+                v => { change("spin", v); }
+              )));
+            }
+          };
+
+          const sectionPanel = (key, labelKey, resetKey, styleHelp) => {
+            const put = panelFor(key, labelKey, resetKey);
+            const section = cfg[key];
+            const offered = ["none", ...Object.keys(PR_FX_RENDERERS).filter(id => prFxFits(id, "atmosphere") && prFxCan(id, key))];
+            const options = offered.map(id => [id, styleLabel(id)]);
+            if (!offered.includes(section.style)) {
+              options.push([section.style, game.i18n.format(`${PR_MODULE_ID}.Moments.Inspector.OlderChoice`, { style: styleLabel(section.style) })]);
+            }
+            put(styleHelp, mkField(loc("Inspector.Style"), mkSelect(options, section.style, v => {
+              cfg[key] = prAtmoStyleSection(v);
+              if (placement !== "mixed") cfg[key].sits = placement;
+              if (key === "pt") cfg.ptGlow = prFxCan(v, "glow");
+              else if (prFxCan(v, "glow")) cfg.glow = true;
+              this._rebuildInspector();
+            })));
+            if (section.style === "none") return;
+            sectionFields(put, prAtmoSectionFx(section), (k, v) => { section[k] = v; });
+            if (key === "pt" && lit && prFxCan(section.style, "glow")) {
+              put("ParticleGlow", mkField(loc("Inspector.ParticleGlow"), onOff(cfg.ptGlow, v => { cfg.ptGlow = v; })));
+            }
+          };
+          sectionPanel("bg", "SectionBackground", "ResetBackground", "BackgroundStyle");
+          sectionPanel("fg", "SectionForeground", "ResetForeground", "ForegroundStyle");
+          sectionPanel("pt", "SectionParticles", "ResetParticles", "ParticleStyle");
+          refreshMarks();
         }
       } else if (clip.type === "disguise") {
-        grid.appendChild(mkField(loc("Inspector.Action"), mkSelect([["set", loc("Inspector.ActionSet")], ["unset", loc("Inspector.ActionUnset")]], cfg.action, v => { cfg.action = v; this._rebuildInspector(); })));
-        grid.appendChild(mkField(loc("Inspector.Group"), mkSelect(groupOptions(), cfg.group, v => { cfg.group = v; })));
-        grid.appendChild(mkEl("p", "pr-mb-hint-small", loc("Inspector.DisguiseGroupHint")));
+        gridH("DisguiseAction", mkField(loc("Inspector.Action"), mkSelect([["set", loc("Inspector.ActionSet")], ["unset", loc("Inspector.ActionUnset")]], cfg.action, v => { cfg.action = v; this._rebuildInspector(); })));
+        gridH("DisguiseGroup", mkField(loc("Inspector.Group"), mkSelect(groupOptions(), cfg.group, v => { cfg.group = v; })));
 
         if (cfg.action === "unset") {
           const allRow = mkEl("div", "pr-mb-opt-row");
@@ -938,7 +1251,7 @@ Hooks.once("init", function() {
         }
 
         if (!(cfg.action === "unset" && cfg.allTokens)) {
-          grid.appendChild(this._buildTargetPicker(loc("Inspector.Tokens"), this._scene.tokens.contents.map(t => [t.id, t.name]), cfg.tokenIds, "token"));
+          gridH("DisguiseTargets", this._buildTargetPicker(loc("Inspector.Tokens"), this._scene.tokens.contents.map(t => [t.id, t.name]), cfg.tokenIds, "token"));
         }
 
         if (cfg.action === "set") {
@@ -1053,13 +1366,14 @@ Hooks.once("init", function() {
     }
 
     _appendAudienceFields(grid, cfg) {
-      grid.appendChild(mkField(loc("Inspector.Audience"), mkSelect(
+      const gridH = (key, el) => grid.appendChild(withHelp(el, key));
+      gridH("Audience", mkField(loc("Inspector.Audience"), mkSelect(
         [["all", loc("Inspector.AudienceAll")], ["perceivers", loc("Inspector.AudiencePerceivers")], ["others", loc("Inspector.AudienceOthers")]],
         cfg.audience,
         v => { cfg.audience = v; this._rebuildInspector(); }
       )));
       if (cfg.audience !== "all") {
-        grid.appendChild(mkField(loc("Inspector.Group"), mkSelect(groupOptions(), cfg.group, v => { cfg.group = v; })));
+        gridH("AudienceGroup", mkField(loc("Inspector.Group"), mkSelect(groupOptions(), cfg.group, v => { cfg.group = v; })));
       }
     }
 
@@ -1096,36 +1410,12 @@ Hooks.once("init", function() {
         .map(w => [w.id, w.id.slice(0, 8) + " (" + (w.door === 2 ? loc("Inspector.SecretDoor") : loc("Inspector.Door")) + ")"]);
     }
 
-    _prTargetPoint(targetType, doc) {
-      if (targetType === "token") {
-        const placeable = canvas.tokens?.get(doc.id);
-        if (placeable) return placeable.center;
-        const size = canvas.grid?.size ?? 100;
-        return { x: doc.x + size / 2, y: doc.y + size / 2 };
-      }
-      if (targetType === "tile") {
-        const placeable = canvas.tiles?.get(doc.id);
-        if (placeable) return placeable.center;
-        return { x: doc.x + (doc.width ?? 0) / 2, y: doc.y + (doc.height ?? 0) / 2 };
-      }
-      if (targetType === "light") return { x: doc.x, y: doc.y };
-      const c = doc.c ?? [0, 0, 0, 0];
-      return { x: (c[0] + c[2]) / 2, y: (c[1] + c[3]) / 2 };
-    }
-
     _prLocateTarget(targetType, id) {
       if (!this._scene || canvas?.scene?.id !== this._scene.id) return;
       const collections = { token: this._scene.tokens, tile: this._scene.tiles, light: this._scene.lights, wall: this._scene.walls };
       const doc = collections[targetType]?.get(id);
       if (!doc) return;
-      const point = this._prTargetPoint(targetType, doc);
-      try {
-        canvas.animatePan({ x: point.x, y: point.y, duration: 250 });
-        const types = CONFIG.Canvas.pings.types;
-        canvas.controls?.handlePing(game.user, point, { scene: canvas.scene.id, style: types.PULSE, zoom: canvas.stage.scale.x });
-      } catch (err) {
-        console.error("[perceived-reality] locate ping failed:", err);
-      }
+      prLocatePoint(prTargetPoint(targetType, doc));
     }
 
     _buildTargetPicker(label, choices, selectedIds, targetType) {
@@ -1163,26 +1453,31 @@ Hooks.once("init", function() {
         }
         list.appendChild(row);
       }
+      const elsewhere = selectedIds.filter(id => !choices.some(([choice]) => choice === id)).length;
+      if (elsewhere) list.appendChild(mkEl("div", "pr-mb-target-empty", fmt("TargetsElsewhere", { count: elsewhere })));
       wrap.appendChild(list);
       return wrap;
     }
 
     _animatePlayhead() {
-      const playhead = this._playheadEl;
-      if (!playhead) return;
       const total = prMomentDuration(this.momentData);
       if (total <= 0) return;
-      const pps = this._pps;
-      const startTime = performance.now();
-      playhead.style.display = "block";
+      const run = { id: prCurrentRunId(), startedAt: performance.now(), total };
+      this._playRun = run;
 
       const tick = (now) => {
-        const t = (now - startTime) / 1000;
-        if (t >= total || !playhead.isConnected) {
-          playhead.style.display = "none";
+        // look it up each frame since rebuilds replace it
+        const playhead = this._playheadEl;
+        const t = (now - run.startedAt) / 1000;
+        if (this._playRun !== run || prCurrentRunId() !== run.id || t >= run.total) {
+          if (this._playRun === run) this._playRun = null;
+          if (playhead && !this._playRun) playhead.style.display = "none";
           return;
         }
-        playhead.style.left = (90 + t * pps) + "px";
+        if (playhead) {
+          playhead.style.display = "block";
+          playhead.style.left = (90 + t * this._pps) + "px";
+        }
         requestAnimationFrame(tick);
       };
       requestAnimationFrame(tick);
@@ -1190,6 +1485,10 @@ Hooks.once("init", function() {
   }
 
   window.PRMomentBuilderClass = PRMomentBuilder;
+});
+
+Hooks.on("canvasReady", function() {
+  window.PRMomentBuilderClass?.current?._onViewedScene();
 });
 
 window.prOpenMomentBuilder = function(scene) {

@@ -1,47 +1,15 @@
-let _prLightViewerGroups = new Set();
-let _prLightIsGM = false;
-let _prLightGmSeeAll = false;
-let _prLightHasSelection = false;
+let _prLightView = null;
 let _prLightApplying = false;
+
+function _prLightCurrentView() {
+  if (!_prLightView) _prLightView = prPerceptionView();
+  return _prLightView;
+}
 
 window.prRefreshLightPerception = function() {
   if (!canvas?.scene) return;
 
-  _prLightIsGM = game.user?.isGM ?? false;
-  _prLightGmSeeAll = _prLightIsGM && (game.settings.get(PR_MODULE_ID, "gmSeeAll") ?? true);
-  _prLightViewerGroups = new Set();
-
-  const controlled = canvas.tokens?.controlled ?? [];
-  _prLightHasSelection = controlled.length > 0;
-
-  // Players keep perceiving via their own character; only GMs fall back to gmSeeAll / preview-on-select.
-  let viewerToken = controlled[0]?.document ?? null;
-  if (!viewerToken && !_prLightIsGM) viewerToken = prGetDefaultPlayerToken()?.document ?? null;
-
-  if (viewerToken) {
-    const rawModes = viewerToken.detectionModes ?? {};
-    const modeList = Array.isArray(rawModes)
-      ? rawModes
-      : Object.entries(rawModes).map(([id, val]) => Object.assign({ id }, val));
-
-    for (const mode of modeList) {
-      if (!mode.enabled) continue;
-      const match = PR_PERCEPTION_GROUPS.find(g => prDetectionModeIdForGroup(g.id) === mode.id);
-      if (match) _prLightViewerGroups.add(match.id);
-    }
-    for (const g of viewerToken.getFlag(PR_MODULE_ID, "viewerGroups") ?? []) {
-      _prLightViewerGroups.add(g);
-    }
-
-    for (const effect of viewerToken.actor?.effects ?? []) {
-      if (effect.disabled) continue;
-      const efGroups = effect.getFlag(PR_MODULE_ID, PR_FLAG_PERCEPTION_GROUPS);
-      if (Array.isArray(efGroups)) {
-        for (const g of efGroups) _prLightViewerGroups.add(g);
-      }
-    }
-  }
-
+  _prLightView = prPerceptionView();
   _prLightApplyAllPerception();
 };
 
@@ -49,25 +17,23 @@ function _prLightShouldBeVisible(lightDoc) {
   const groups = lightDoc.getFlag(PR_MODULE_ID, PR_FLAG_PERCEPTION_GROUPS);
   if (!groups?.length) return true;
 
+  const view = _prLightCurrentView();
+
   // Keep a light Foundry already hid, hidden regardless of groups but the GM still sees it.
-  const baseVisible = !lightDoc.hidden || _prLightIsGM;
+  const baseVisible = !lightDoc.hidden || view.isGM;
 
-  if (_prLightIsGM && !_prLightGmSeeAll && _prLightHasSelection) {
-    // GM preview mode: keep the source active; fading the icon communicates the mismatch
-    return baseVisible;
-  }
+  if (view.preview) return baseVisible;
 
-  const groupVisible = _prLightGmSeeAll || (_prLightIsGM && !_prLightHasSelection) || groups.some(g => _prLightViewerGroups.has(g));
-  return baseVisible && groupVisible;
+  return baseVisible && prPerceives(view, groups);
 }
 
 // In GM preview mode, dim the light's control icon when the selected token can't perceive it.
 function _prLightApplyIconAlpha(light, groups) {
   if (!light.controlIcon) return;
 
-  if (_prLightIsGM && !_prLightGmSeeAll && _prLightHasSelection) {
-    const matches = groups.some(g => _prLightViewerGroups.has(g));
-    const dim = light.document.hidden || !matches;
+  const view = _prLightCurrentView();
+  if (view.preview) {
+    const dim = light.document.hidden || !prPerceives(view, groups);
     light.controlIcon.alpha = dim ? PR_GM_DIM_ALPHA : 1;
     prApplyDesaturation(light.controlIcon, dim);
   } else {
@@ -85,9 +51,8 @@ function _prLightApplyIlluminationDim(light, groups) {
   const baseAlpha = cfg.alpha ?? 0.5;
   const baseLuminosity = cfg.luminosity ?? 0.5;
 
-  if (_prLightIsGM && !_prLightGmSeeAll && _prLightHasSelection) {
-    const matches = groups.some(g => _prLightViewerGroups.has(g));
-    const dim = light.document.hidden || !matches;
+  if (_prLightCurrentView().preview) {
+    const dim = light.document.hidden || !prPerceives(_prLightCurrentView(), groups);
     if (dim) {
       src.initialize({ alpha: baseAlpha * PR_GM_DIM_ALPHA, luminosity: baseLuminosity * PR_GM_DIM_ALPHA });
       return;
@@ -135,7 +100,7 @@ function _prLightEnforceSingle(light, visible) {
 
 // No group restriction. Clear any leftover GM preview dim and restore full visibility.
 function _prLightResetPerception(light) {
-  _prLightEnforceSingle(light, !light.document.hidden || _prLightIsGM);
+  _prLightEnforceSingle(light, !light.document.hidden || _prLightCurrentView().isGM);
   if (light.controlIcon) { light.controlIcon.alpha = 1; prApplyDesaturation(light.controlIcon, false); }
 
   const src = light.lightSource;
@@ -166,6 +131,35 @@ function _prLightSourcesAdd(sources, src, light) {
   }
 }
 
+let _prLightIndex = null;
+
+function _prLightIndexInvalidate() {
+  _prLightIndex = null;
+}
+
+function _prLightIndexed() {
+  if (_prLightIndex) return _prLightIndex;
+  const byKey = new Map();
+  const bySource = new Map();
+  for (const light of canvas.lighting?.placeables ?? []) {
+    if (light.sourceId) byKey.set(light.sourceId, light);
+    if (light.id) byKey.set(light.id, light);
+    // best effort since sources get reassigned but keys don't
+    if (light.lightSource) bySource.set(light.lightSource, light);
+  }
+  _prLightIndex = { byKey, bySource };
+  return _prLightIndex;
+}
+
+function _prLightFor(key, src) {
+  const index = _prLightIndexed();
+  if (src) {
+    const bySource = index.bySource.get(src);
+    if (bySource) return bySource;
+  }
+  return (key == null) ? null : (index.byKey.get(key) ?? null);
+}
+
 // Intercept add/set so hidden lights can't sneak back in during Foundry's refresh.
 function _prLightPatchSourcesCollection() {
   const sources = canvas.effects?.lightSources;
@@ -174,9 +168,7 @@ function _prLightPatchSourcesCollection() {
   if (sources instanceof Map) {
     const _origSet = sources.set.bind(sources);
     sources.set = function(key, src) {
-      const light = canvas.lighting?.placeables?.find(
-        l => l.lightSource === src || l.sourceId === key || l.id === key
-      );
+      const light = _prLightFor(key, src);
       if (light) {
         const groups = light.document.getFlag(PR_MODULE_ID, PR_FLAG_PERCEPTION_GROUPS);
         if (groups?.length && !_prLightShouldBeVisible(light.document)) {
@@ -188,7 +180,7 @@ function _prLightPatchSourcesCollection() {
   } else {
     const _origAdd = sources.add.bind(sources);
     sources.add = function(src) {
-      const light = canvas.lighting?.placeables?.find(l => l.lightSource === src);
+      const light = _prLightFor(null, src);
       if (light) {
         const groups = light.document.getFlag(PR_MODULE_ID, PR_FLAG_PERCEPTION_GROUPS);
         if (groups?.length && !_prLightShouldBeVisible(light.document)) {
@@ -231,21 +223,20 @@ Hooks.on("refreshAmbientLight", function(light) {
 
 // triggerRefresh=false since we're already inside a Foundry refresh
 Hooks.on("initializeLightSources", function() {
+  _prLightIndexInvalidate();
   _prLightPatchSourcesCollection();
   _prLightApplyAllPerception(false);
 });
 
 Hooks.on("canvasReady", () => {
+  _prLightIndexInvalidate();
   _prLightPatchSourcesCollection();
   prRefreshLightPerception();
 });
 Hooks.on("controlToken", () => prRefreshLightPerception());
 Hooks.on("updateToken", (_doc, change) => {
-  if (change.detectionModes || change.flags?.[PR_MODULE_ID]) prRefreshLightPerception();
+  if (change.detectionModes || change.flags?.[PR_MODULE_ID]) prRequestRefresh("prRefreshLightPerception");
 });
-Hooks.on("updateAmbientLight", () => prRefreshLightPerception());
-Hooks.on("createAmbientLight", () => prRefreshLightPerception());
-Hooks.on("deleteAmbientLight", () => prRefreshLightPerception());
-Hooks.on("createActiveEffect", () => prRefreshLightPerception());
-Hooks.on("deleteActiveEffect", () => prRefreshLightPerception());
-Hooks.on("updateActiveEffect", () => prRefreshLightPerception());
+Hooks.on("updateAmbientLight", () => { _prLightIndexInvalidate(); prRequestRefresh("prRefreshLightPerception"); });
+Hooks.on("createAmbientLight", () => { _prLightIndexInvalidate(); prRequestRefresh("prRefreshLightPerception"); });
+Hooks.on("deleteAmbientLight", () => { _prLightIndexInvalidate(); prRequestRefresh("prRefreshLightPerception"); });

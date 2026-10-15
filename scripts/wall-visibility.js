@@ -4,47 +4,23 @@ function _prWallResolveDoorControlClass() {
 
 let _prWallViewerGroups = new Set();
 let _prWallIsGM = false;
-let _prWallGmSeeAll = false;
-let _prWallHasSelection = false;
+let _prWallPreview = false;
 
 window.prRefreshWallPerception = function() {
   if (!canvas?.scene) return;
 
   _prWallIsGM = game.user?.isGM ?? false;
-  _prWallGmSeeAll = _prWallIsGM && (game.settings.get(PR_MODULE_ID, "gmSeeAll") ?? true);
   _prWallViewerGroups = new Set();
-
-  const controlled = canvas.tokens?.controlled ?? [];
-  _prWallHasSelection = controlled.length > 0;
+  _prWallPreview = false;
 
   // Players keep perceiving via their own character perception group. GMs always see the real persisted door
-  let viewerToken = controlled[0]?.document ?? null;
-  if (!viewerToken && !_prWallIsGM) viewerToken = prGetDefaultPlayerToken()?.document ?? null;
-
-  if (viewerToken) {
-    const rawModes = viewerToken.detectionModes ?? {};
-
-    const modeList = Array.isArray(rawModes)
-      ? rawModes
-      : Object.entries(rawModes).map(([id, val]) => Object.assign({ id }, val));
-
-    for (const mode of modeList) {
-      if (!mode.enabled) continue;
-      const match = PR_PERCEPTION_GROUPS.find(g => prDetectionModeIdForGroup(g.id) === mode.id);
-      if (match) _prWallViewerGroups.add(match.id);
-    }
-
-    for (const g of viewerToken.getFlag(PR_MODULE_ID, "viewerGroups") ?? []) {
-      _prWallViewerGroups.add(g);
-    }
-
-    for (const effect of viewerToken.actor?.effects ?? []) {
-      if (effect.disabled) continue;
-      const efGroups = effect.getFlag(PR_MODULE_ID, PR_FLAG_PERCEPTION_GROUPS);
-      if (Array.isArray(efGroups)) {
-        for (const g of efGroups) _prWallViewerGroups.add(g);
-      }
-    }
+  if (_prWallIsGM) {
+    const view = prPerceptionView();
+    _prWallPreview = view.preview;
+    _prWallViewerGroups = view.groups ?? new Set();
+  } else {
+    const viewerToken = canvas.tokens?.controlled[0]?.document ?? prGetDefaultPlayerToken()?.document ?? null;
+    if (viewerToken) _prWallViewerGroups = prGroupsForTokenDoc(viewerToken);
   }
 
   for (const wall of canvas.walls?.placeables ?? []) {
@@ -83,7 +59,7 @@ async function _prWallApplyDoorOverride(wall) {
   // Sync the placeable's edge for sight/movement
   if (wall.edge) wall.edge.door = targetType;
 
-  const dim = _prWallIsGM && hasGroups && !_prWallGmSeeAll && _prWallHasSelection && !matches;
+  const dim = _prWallIsGM && hasGroups && _prWallPreview && !matches;
   const doorAlpha = dim ? PR_GM_DIM_ALPHA_ICON : 1;
 
   // Foundry doesn't build a DoorControl for a secret door type on non-GM clients so build one
@@ -119,11 +95,8 @@ Hooks.on("drawWall", function(wall) { _prWallApplyDoorOverride(wall); });
 Hooks.on("canvasReady", function() { prRefreshWallPerception(); });
 Hooks.on("controlToken", function() { prRefreshWallPerception(); });
 Hooks.on("updateToken", function(_doc, change) {
-  if (change.detectionModes || change.flags?.[PR_MODULE_ID]) prRefreshWallPerception();
+  if (change.detectionModes || change.flags?.[PR_MODULE_ID]) prRequestRefresh("prRefreshWallPerception");
 });
-Hooks.on("createWall", function() { prRefreshWallPerception(); });
-Hooks.on("updateWall", function() { prRefreshWallPerception(); });
-Hooks.on("deleteWall", function() { prRefreshWallPerception(); });
-Hooks.on("createActiveEffect", function() { prRefreshWallPerception(); });
-Hooks.on("deleteActiveEffect", function() { prRefreshWallPerception(); });
-Hooks.on("updateActiveEffect", function() { prRefreshWallPerception(); });
+Hooks.on("createWall", function() { prRequestRefresh("prRefreshWallPerception"); });
+Hooks.on("updateWall", function() { prRequestRefresh("prRefreshWallPerception"); });
+Hooks.on("deleteWall", function() { prRequestRefresh("prRefreshWallPerception"); });

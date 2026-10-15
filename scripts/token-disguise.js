@@ -34,6 +34,12 @@ window.prClientDisguisePerspective = function() {
   const isGM = game.user?.isGM ?? false;
   if (!isGM) return { seesTruth: false, groups: prClientPerceivedGroups(), selfId: null };
 
+  const override = window.prViewAsOverride;
+  if (override?.mode === "all") return { seesTruth: true, groups: null, selfId: null };
+  const seen = prPreviewedToken(override);
+  if (seen) return { seesTruth: false, groups: prGroupsForTokenDoc(seen), selfId: seen.id };
+  if (override?.mode === "group" && override.groupId) return { seesTruth: false, groups: new Set([override.groupId]), selfId: null };
+
   const seeAll = game.settings.get(PR_MODULE_ID, "gmSeeAllDisguises") ?? true;
   if (seeAll) return { seesTruth: true, groups: null, selfId: null };
 
@@ -42,6 +48,11 @@ window.prClientDisguisePerspective = function() {
   if (!viewer) return { seesTruth: false, groups: null, selfId: null };
 
   return { seesTruth: false, groups: prGroupsForTokenDoc(viewer), selfId: viewer.id };
+};
+
+window.prDisguiseFor = function(tokenDoc) {
+  if (!tokenDoc) return null;
+  return _prDisguiseEntryForViewer(tokenDoc, prClientDisguisePerspective());
 };
 
 window.prRefreshTokenDisguises = function() {
@@ -63,13 +74,23 @@ Hooks.on("refreshToken", function(token) {
   const entry = _prDisguiseEntryForViewer(token.document, perspective);
 
   if (entry) {
+    // only record once
+    if (!token._prDisguised) {
+      token._prDisguised = true;
+      token._prRealTexture = null;
+      token._prRealBars = token.bars?.visible ?? true;
+      token._prRealName = token.nameplate?.visible ?? true;
+      token._prRealTint = token.border?.tint ?? null;
+    }
+
     _prEnsureDisguiseTexture(entry.img);
     const tex = _prDisguiseTextureCache.get(entry.img);
     if (tex && token.mesh && token.mesh.texture !== PIXI.Texture.EMPTY) {
-      if (!token._prDisguised) token._prRealTexture = token.mesh.texture;
+      if (!token._prRealTexture && token.mesh.texture !== tex) token._prRealTexture = token.mesh.texture;
       if (token.mesh.texture !== tex) token.mesh.texture = tex;
-      token._prDisguised = true;
     }
+
+    if (token.bars) token.bars.visible = false;
 
     if (token.nameplate) {
       if (entry.hideNameplate) token.nameplate.visible = false;
@@ -82,17 +103,29 @@ Hooks.on("refreshToken", function(token) {
     }
   } else if (token._prDisguised) {
     if (token.mesh && token._prRealTexture) token.mesh.texture = token._prRealTexture;
-    if (token.nameplate) token.nameplate.text = token.document.name;
+    if (token.bars) token.bars.visible = token._prRealBars ?? true;
+    if (token.nameplate) {
+      token.nameplate.text = token.document.name;
+      token.nameplate.visible = token._prRealName ?? true;
+    }
+    if (token.border && (token._prRealTint !== null) && (token._prRealTint !== undefined)) {
+      token.border.tint = token._prRealTint;
+    }
     token._prDisguised = false;
     token._prRealTexture = null;
+    token._prRealBars = null;
+    token._prRealName = null;
+    token._prRealTint = null;
   }
 });
 
-Hooks.on("canvasReady", function() { prRefreshTokenDisguises(); });
+Hooks.on("canvasReady", function() {
+  // Foundry destroys textures between scenes
+  _prDisguiseTextureCache.clear();
+  _prDisguiseLoading.clear();
+  prRefreshTokenDisguises();
+});
 Hooks.on("controlToken", function() { prRefreshTokenDisguises(); });
 Hooks.on("updateToken", function(_doc, change) {
-  if (change.flags?.[PR_MODULE_ID]) prRefreshTokenDisguises();
+  if (change.flags?.[PR_MODULE_ID]) prRequestRefresh("prRefreshTokenDisguises");
 });
-Hooks.on("createActiveEffect", function() { prRefreshTokenDisguises(); });
-Hooks.on("deleteActiveEffect", function() { prRefreshTokenDisguises(); });
-Hooks.on("updateActiveEffect", function() { prRefreshTokenDisguises(); });

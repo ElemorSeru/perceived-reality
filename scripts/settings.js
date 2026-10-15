@@ -3,7 +3,7 @@ Hooks.once("init", () => {
   // Per group display label overrides
   for (const group of PR_PERCEPTION_GROUPS) {
     game.settings.register(PR_MODULE_ID, `label.${group.id}`, {
-      name: game.i18n.format("perceived-reality.Settings.GroupLabel.Name", { group: group.id.toUpperCase() }),
+      name: "perceived-reality.Settings.GroupLabel.Name",
       hint: game.i18n.localize("perceived-reality.Settings.GroupLabel.Hint"),
       scope: "world",
       config: true,
@@ -19,7 +19,29 @@ Hooks.once("init", () => {
     default: [],
   });
 
+  game.settings.register(PR_MODULE_ID, "effectDetail", {
+    name: game.i18n.localize("perceived-reality.Settings.EffectDetail.Name"),
+    hint: game.i18n.localize("perceived-reality.Settings.EffectDetail.Hint"),
+    scope: "client",
+    config: true,
+    type: String,
+    choices: {
+      full: game.i18n.localize("perceived-reality.Settings.EffectDetail.Full"),
+      balanced: game.i18n.localize("perceived-reality.Settings.EffectDetail.Balanced"),
+      light: game.i18n.localize("perceived-reality.Settings.EffectDetail.Light")
+    },
+    default: "full",
+    onChange: () => { if (window.prApplyAtmosphereFromScene) prApplyAtmosphereFromScene(); }
+  });
+
   game.settings.register(PR_MODULE_ID, "momentLibraryMigrated", {
+    scope: "world",
+    config: false,
+    type: Boolean,
+    default: false,
+  });
+
+  game.settings.register(PR_MODULE_ID, "atmosphereSections", {
     scope: "world",
     config: false,
     type: Boolean,
@@ -68,6 +90,14 @@ Hooks.once("init", () => {
     },
   });
 
+});
+
+// translations load after init, so fill in each group's letter
+Hooks.once("i18nInit", () => {
+  for (const group of PR_PERCEPTION_GROUPS) {
+    const setting = game.settings.settings.get(`${PR_MODULE_ID}.label.${group.id}`);
+    if (setting) setting.name = game.i18n.format("perceived-reality.Settings.GroupLabel.Name", { group: group.id.slice(-1).toUpperCase() });
+  }
 });
 
 // Calling at render time and after "ready"

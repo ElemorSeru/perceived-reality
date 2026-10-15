@@ -2,7 +2,7 @@
 
 [![Patreon](https://img.shields.io/badge/Patreon-F96854?style=for-the-badge&logo=patreon&logoColor=white)](https://patreon.com/Elemor)
 [![Foundry Version](https://img.shields.io/badge/Foundry-v12--v14-informational?style=for-the-badge)](https://foundryvtt.com)
-[![Module Version](https://img.shields.io/badge/Version-1.1.0-success?style=for-the-badge)](https://github.com/ElemorSeru/perceived-reality/releases/latest)
+[![Module Version](https://img.shields.io/badge/Version-1.2.0-success?style=for-the-badge)](https://github.com/ElemorSeru/perceived-reality/releases/latest)
 <img alt="GitHub Downloads (all assets, latest release)" src="https://img.shields.io/github/downloads/ElemorSeru/perceived-reality/latest/total">
 
 A Foundry VTT module that lets the GM assign tokens, tiles, lights, and doors to **perception groups**. Only the players whose characters belong to a matching group can see (or use) those objects, while everyone else perceives the canvas as if they were never there. Built for hallucinations, illusions, invisible creatures, hidden passages, and any other "not everyone sees the same thing" moment, all on the same shared scene.
@@ -65,18 +65,28 @@ This means a hidden passage can be "secret to the party but obvious to the rogue
 
 ## Viewer Groups: Who Can Perceive What
 
-A token "belongs" to a perception group through its **viewer groups**, which can be set in two ways:
+A token sees a group's content by being in that group (its **viewer groups**), which can be set two ways. This is the opposite of the Perceived Reality section in a token's Vision tab, which sets who can see the token itself.
 
 ### Token HUD Button
 <p align="center">
   <img src="assets/screenshots/PR_TokenViewSettings.png" alt="image" width="339">
 </p>
 
-GMs get a new eye icon on the Token HUD. Clicking it opens a small panel listing all six perception groups, click any of them to toggle that token in or out of the group. This is the quickest way to permanently assign a PC (or any token) to a group, for example, giving the party rogue permanent access to a hidden-door group.
+GMs get a new eye icon on the Token HUD. Clicking it opens a small panel listing all six perception groups, click any of them to toggle that token in or out of the group. This is the quickest way to permanently assign a PC (or any token) to a group, for example, giving the party rogue permanent access to a hidden-door group. A group the token only has through an active effect also shows in the panel, outlined and marked *effect*. It ends with the effect unless you click it to make it permanent.
 
 ### Status Effects (Active Effects)
 
 Each perception group also has a matching status effect that can be applied to a token through the normal status effect menu, or via spells, items, or active effects in your system. While the effect is active, that token can perceive everything assigned to that group, and it's removed the moment the effect ends.
+
+This relies on the system creating an Active Effect when the status is toggled, which is how dnd5e works. Pathfinder 2e has its own condition system and doesn't allow Active Effects besides the death overlay, so on PF2e the group icons in the status menu set the token's groups directly, same as the eye panel: click to add, right-click to remove, applied to every selected token (GM only). Those are permanent picks, remove them by hand or with Clear Perception.
+
+For temporary access on PF2e, use a PF2e effect. Any effect, spell, feat or piece of equipment with this rule element grants the group while PF2e applies it, and it ends when the effect expires or is removed:
+
+```json
+{ "key": "RollOption", "domain": "all", "option": "perceived-reality:group-a" }
+```
+
+Use `group-b` through `group-f` for the other groups. Toggling a group's status from a macro or another module, for example `actor.toggleStatusEffect("perceived-reality.group-a")`, creates such an effect for you.
 
 This is the intended path for *temporary* perception changes, true seeing, a hallucination spell wearing off, a potion of invisibility detection, and so on, without permanently editing the token.
 
@@ -129,6 +139,20 @@ This is built for spot-checking: select the rogue's token to confirm the hidden 
 
 ---
 
+## Perception Window
+
+One quick access window with every group on the scene, so changing who sees what doesn't mean switching layers or opening config sheets. Open it from the eye tool in the Token, Tile, Lighting or Wall controls, with **Ctrl+Shift+E**, or by right-clicking a scene in the scene sidebar. GM only.
+
+- **Seen by / Sees** - switch between the groups that can see each thing and the groups each token is in. Click a group's icon on any row to add or remove it.
+- **Selected** - what you have selected on the canvas shows at the top, with an **All** row to change them together.
+- **Pick** - select tokens, tiles, lights and doors from the canvas whichever layer is active. Click picks one, Shift+click multi-selects.
+- **Scene list** - every token, tile, light and door on the scene, with search and a **Tagged** filter for things that have a group or a disguise.
+- **Move to** - pans to the thing and pings it on your screen only. Players don't see the ping.
+- **Open config** - opens the thing's own config sheet at its Perceived Reality section. The mask on a token row opens it at Seen As.
+- **Viewing as** - previews the canvas as a party token or a group sees it. Only you see the preview, and it ends when the window closes.
+
+---
+
 ## Moment Builder: Scripted Reveals & Effects
 <p align="center">
   <img src="assets/screenshots/PR_MomentBuilder.png" alt="image" width="880">
@@ -157,7 +181,9 @@ Clips that overlap in time automatically split into separate visual lanes so not
 
 Moments can be triggered **manually** from the builder or catalog, or set to run **on scene activation**, so an entrance can play itself out the moment the GM switches to that scene.
 
-As a fallback, if a transition, narration, or atmosphere effect is ever left running, closing the builder mid-sequence or from atmosphere presets that persist by design, the toolbar's **Clear Effects** button immediately resets every overlay on the current scene for every connected player.
+Two "Stop" type toolbar buttons. **Stop Moment** ends the run so nothing else plays. **Clear Effects** resets every overlay on the scene for every connected player, for when something is left showing after the builder closed mid-sequence or an atmosphere stuck around. Clearing also stops the run.
+
+Neither of these would undo what a Moment already did/ran through. A perception grant or disguise from a clip that already played stays applied. Use **Clear Perception** and **Clear Disguises** for that.
 
 ### FXMaster Integration
 
@@ -170,7 +196,7 @@ Without FXMaster active, the Effect option is unavailable to add obviously; any 
 
 ### Moment Catalog
 
-A grid view of every saved Moment across every scene, grouped by scene name (moments whose scene was later deleted land in an "Unassigned" group). Each tile has a kebab menu (3 verticle dots) to **Run** it against the current scene, **Edit** it in the builder (opening its owning scene for reference, without activating it), or **Delete** it.
+A grid view of every saved Moment across every scene, grouped by scene name (moments filed under no scene, or whose scene was later deleted, land in an "Any scene" group). Each tile has a kebab menu (3 vertical dots) to **Run** it against the current scene, **Edit** it in the builder (opening its owning scene for reference, without activating it), or **Delete** it.
 
 ---
 
@@ -208,7 +234,7 @@ Perception-group assignments are stored as **document flags** on the individual 
 
 Viewer group assignments on a token are stored as a combination of that token's detection modes and a small flag, both on the token document itself. Disguises are a flag on the token document too, keyed by perception group.
 
-Saved Moments are the one exception, they live in a world-scoped setting rather than on the scene document, specifically so a Moment survives its scene being deleted (it falls back to "Unassigned" in the catalog instead of disappearing).
+Saved Moments are the exception. They're stored in a world setting instead of on the scene, so a Moment isn't lost if its scene is deleted (it moves to "Any scene" in the catalog).
 
 ---
 

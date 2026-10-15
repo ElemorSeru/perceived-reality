@@ -34,9 +34,10 @@ Hooks.on("renderTokenHUD", function(hud, html, _data) {
   _prHudPanelTokenId = tokenDoc.id;
 
   const currentGroups = _prHudReadViewerGroups(tokenDoc);
+  const effectGroups = prGetActiveGroupsForToken(tokenDoc);
 
   const btn = document.createElement("div");
-  btn.className = "control-icon pr-hud-btn" + (currentGroups.size > 0 ? " pr-hud-active" : "");
+  btn.className = "control-icon pr-hud-btn" + ((currentGroups.size + effectGroups.size) > 0 ? " pr-hud-active" : "");
   btn.dataset.tooltip = game.i18n.localize("perceived-reality.HUD.ButtonTooltip");
   btn.innerHTML = '<i class="fa-solid fa-eye-low-vision"></i>';
 
@@ -44,7 +45,7 @@ Hooks.on("renderTokenHUD", function(hud, html, _data) {
   if (leftCol) leftCol.appendChild(btn);
   else el.appendChild(btn);
 
-  const panel = _prHudBuildPanel(currentGroups, btn, tokenDoc);
+  const panel = _prHudBuildPanel(currentGroups, btn, tokenDoc, effectGroups);
   document.body.appendChild(panel);
   _prHudOpenPanel = panel;
 
@@ -92,6 +93,10 @@ Hooks.on("renderTokenHUD", function(hud, html, _data) {
 });
 
 function _prHudReadViewerGroups(tokenDoc) {
+  const flagGroups = tokenDoc.getFlag(PR_MODULE_ID, "viewerGroups");
+  if (Array.isArray(flagGroups)) return new Set(flagGroups);
+
+  // older builds stored picks only as detection modes
   const active = new Set();
   const raw = tokenDoc.detectionModes ?? {};
 
@@ -111,13 +116,12 @@ function _prHudReadViewerGroups(tokenDoc) {
     }
   }
 
-  const flagGroups = tokenDoc.getFlag(PR_MODULE_ID, "viewerGroups") ?? [];
-  for (const g of flagGroups) active.add(g);
-
+  for (const g of prGetActiveGroupsForToken(tokenDoc)) active.delete(g);
   return active;
 }
+window.prReadViewerGroups = _prHudReadViewerGroups;
 
-function _prHudBuildPanel(currentGroups, btn, tokenDoc) {
+function _prHudBuildPanel(currentGroups, btn, tokenDoc, effectGroups = new Set()) {
   const localGroups = new Set(currentGroups);
 
   const panel = document.createElement("div");
@@ -153,6 +157,15 @@ function _prHudBuildPanel(currentGroups, btn, tokenDoc) {
     row.appendChild(img);
     row.appendChild(span);
 
+    if (effectGroups.has(group.id)) {
+      row.classList.add("pr-from-effect");
+      row.dataset.tooltip = game.i18n.localize("perceived-reality.HUD.FromEffectHint");
+      const badge = document.createElement("span");
+      badge.className = "pr-picker-badge";
+      badge.textContent = game.i18n.localize("perceived-reality.HUD.FromEffect");
+      row.appendChild(badge);
+    }
+
     row.addEventListener("click", async function(e) {
       e.stopPropagation();
 
@@ -163,9 +176,9 @@ function _prHudBuildPanel(currentGroups, btn, tokenDoc) {
         localGroups.add(group.id);
         row.classList.add("pr-active");
       }
-      btn.classList.toggle("pr-hud-active", localGroups.size > 0);
+      btn.classList.toggle("pr-hud-active", (localGroups.size + effectGroups.size) > 0);
 
-      await _prHudCommitViewerGroups(tokenDoc, localGroups);
+      await prCommitViewerGroups(tokenDoc, localGroups, { render: false });
     });
 
     panel.appendChild(row);
@@ -174,50 +187,68 @@ function _prHudBuildPanel(currentGroups, btn, tokenDoc) {
   return panel;
 }
 
-async function _prHudCommitViewerGroups(tokenDoc, localGroups) {
-  const groupIds = Array.from(localGroups);
-  const raw = tokenDoc.detectionModes ?? {};
-  const isV14 = !Array.isArray(raw);
+// pf2e only accepts its own conditions so this set groups
+function _prHudGridTakenOver() {
+  return !!game.pf2e?.StatusEffects;
+}
 
+function _prHudGroupForStatus(statusId) {
+  return PR_PERCEPTION_GROUPS.find(g => prStatusIdForGroup(g.id) === statusId) ?? null;
+}
+
+function _prHudMarkStatusGrid(grid) {
+  const tokenDoc = canvas.tokens?.hud?.object?.document;
+  if (!tokenDoc) return;
+  const groups = _prHudReadViewerGroups(tokenDoc);
+  for (const control of grid.querySelectorAll(".effect-control")) {
+    const group = _prHudGroupForStatus(control.dataset.statusId);
+    if (group) control.classList.toggle("active", groups.has(group.id));
+  }
+}
+
+async function _prHudOnStatusGrid(event) {
+  const control = event.target.closest?.(".effect-control");
+  const group = control ? _prHudGroupForStatus(control.dataset.statusId) : null;
+  if (!group) return;
+  // capture the phase, ahead of the system's handler
+  event.preventDefault();
+  event.stopPropagation();
+
+  const hudDoc = canvas.tokens?.hud?.object?.document;
+  if (!hudDoc) return;
+  const targets = (canvas.tokens?.controlled ?? []).map(t => t.document);
+  if (!targets.includes(hudDoc)) targets.push(hudDoc);
+  const add = (event.type === "click") && !_prHudReadViewerGroups(hudDoc).has(group.id);
+  for (const tokenDoc of targets) {
+    const groups = _prHudReadViewerGroups(tokenDoc);
+    if (add) groups.add(group.id);
+    else groups.delete(group.id);
+    await prCommitViewerGroups(tokenDoc, groups, { render: false });
+  }
+}
+
+Hooks.on("renderTokenHUD", function(_hud, html) {
+  if (!game.user.isGM || !_prHudGridTakenOver()) return;
+  const el = html instanceof HTMLElement ? html : html[0];
+  const grid = el?.querySelector(".status-effects");
+  if (!grid) return;
+  if (!grid.dataset.prGroups) {
+    grid.dataset.prGroups = "1";
+    grid.addEventListener("click", _prHudOnStatusGrid, true);
+    grid.addEventListener("contextmenu", _prHudOnStatusGrid, true);
+  }
+  // mark them after the system swaps its icons
+  queueMicrotask(() => _prHudMarkStatusGrid(grid));
+});
+
+window.prCommitViewerGroups = async function(tokenDoc, localGroups, options = {}) {
   try {
-    if (isV14) {
-      // V14: partial update for mode keys
-      const updateData = {};
-
-      if ("perceived-reality" in raw) {
-        updateData["detectionModes.-=perceived-reality"] = null;
-      }
-
-      for (const group of PR_PERCEPTION_GROUPS) {
-        const modeId = prDetectionModeIdForGroup(group.id);
-        if (localGroups.has(group.id)) {
-          updateData[`detectionModes.${modeId}`] = { enabled: true, range: 0 };
-        } else {
-          updateData[`detectionModes.-=${modeId}`] = null;
-        }
-      }
-
-      await tokenDoc.update(updateData);
-    } else {
-      // V13: detectionModes is an array since full replacement is the only option.
-      const others = foundry.utils.deepClone(raw).filter(function(m) {
-        return !PR_PERCEPTION_GROUPS.some(g => prDetectionModeIdForGroup(g.id) === m.id);
-      });
-      for (const group of PR_PERCEPTION_GROUPS) {
-        if (localGroups.has(group.id)) {
-          others.push({ id: prDetectionModeIdForGroup(group.id), enabled: true, range: 0 });
-        }
-      }
-      await tokenDoc.update({ detectionModes: others });
-    }
-
-    await tokenDoc.setFlag(PR_MODULE_ID, "viewerGroups", groupIds);
+    await tokenDoc.update({ [`flags.${PR_MODULE_ID}.viewerGroups`]: Array.from(localGroups) }, options);
+    await prReconcileDetectionModes(tokenDoc);
   } catch (err) {
     console.error("[perceived-reality] commit failed:", err);
   }
 
   canvas.perception?.update({ refreshVision: true, refreshLighting: true });
-  prRefreshTilePerception();
-  prRefreshLightPerception();
-  prRefreshTokenPerception();
-}
+  for (const name of ["prRefreshTilePerception", "prRefreshLightPerception", "prRefreshTokenPerception"]) prRequestRefresh(name);
+};

@@ -1,50 +1,9 @@
-let _prTokenViewerGroups = new Set();
-let _prTokenIsGM = false;
-let _prTokenGmSeeAll = false;
-let _prTokenHasSelection = false;
+let _prTokenView = null;
 
 window.prRefreshTokenPerception = function() {
   if (!canvas?.scene) return;
 
-  _prTokenIsGM = game.user?.isGM ?? false;
-  _prTokenGmSeeAll = _prTokenIsGM && (game.settings.get(PR_MODULE_ID, "gmSeeAll") ?? true);
-
-  _prTokenViewerGroups = new Set();
-
-  // Prefer the controlled token but fall back to an owned token for players who haven't selected one. so we dont lose visibility of them
-  const controlled = canvas.tokens?.controlled ?? [];
-  _prTokenHasSelection = controlled.length > 0;
-  let viewerToken = controlled[0]?.document ?? null;
-
-  if (!viewerToken && !_prTokenIsGM) {
-    viewerToken = prGetDefaultPlayerToken()?.document ?? null;
-  }
-
-  if (viewerToken) {
-    const rawModes = viewerToken.detectionModes ?? {};
-
-    const modeList = Array.isArray(rawModes)
-      ? rawModes
-      : Object.entries(rawModes).map(([id, val]) => Object.assign({ id }, val));
-
-    for (const mode of modeList) {
-      if (!mode.enabled) continue;
-      const match = PR_PERCEPTION_GROUPS.find(g => prDetectionModeIdForGroup(g.id) === mode.id);
-      if (match) _prTokenViewerGroups.add(match.id);
-    }
-
-    // Flag fallback
-    const flagGroups = viewerToken.getFlag(PR_MODULE_ID, "viewerGroups") ?? [];
-    for (const g of flagGroups) _prTokenViewerGroups.add(g);
-
-    for (const effect of viewerToken.actor?.effects ?? []) {
-      if (effect.disabled) continue;
-      const efGroups = effect.getFlag(PR_MODULE_ID, PR_FLAG_PERCEPTION_GROUPS);
-      if (Array.isArray(efGroups)) {
-        for (const g of efGroups) _prTokenViewerGroups.add(g);
-      }
-    }
-  }
+  _prTokenView = prPerceptionView();
 
   // Redraw every token since a token may have just lost its last grouping
   for (const token of canvas.tokens?.placeables ?? []) {
@@ -64,9 +23,12 @@ Hooks.on("refreshToken", function(token) {
     return;
   }
 
-  const matches = tokenGroups.some(g => _prTokenViewerGroups.has(g));
+  const view = _prTokenView ?? (_prTokenView = prPerceptionView());
 
-  if (_prTokenIsGM && !_prTokenGmSeeAll && _prTokenHasSelection) {
+  const ownsIt = !view.isGM && token.document.isOwner;
+  const matches = ownsIt || prPerceives(view, tokenGroups);
+
+  if (view.preview) {
     // GM preview mode: stay selectable and dim instead of hiding
     const baseAlpha = token.document.alpha ?? 1;
     const dim = token.document.hidden || !matches;
@@ -77,14 +39,12 @@ Hooks.on("refreshToken", function(token) {
     return;
   }
 
-  // gmSeeAll on, GM with nothing selected, or a player: simple show/hide
-  const groupVisible = _prTokenGmSeeAll || (_prTokenIsGM && !_prTokenHasSelection) || matches;
-  const visible = baseVisible && groupVisible;
+  const visible = baseVisible && matches;
 
   token.visible = visible;
   if (token.mesh) { token.mesh.visible = visible; prApplyDesaturation(token.mesh, false); }
 
-  if (_prTokenIsGM) {
+  if (view.isGM) {
     const baseAlpha = token.document.alpha ?? 1;
     token.alpha = baseAlpha;
     if (token.mesh) token.mesh.alpha = baseAlpha;
@@ -94,8 +54,5 @@ Hooks.on("refreshToken", function(token) {
 Hooks.on("canvasReady", function() { prRefreshTokenPerception(); });
 Hooks.on("controlToken", function() { prRefreshTokenPerception(); });
 Hooks.on("updateToken", function(_doc, change) {
-  if (change.detectionModes || change.flags?.[PR_MODULE_ID]) prRefreshTokenPerception();
+  if (change.detectionModes || change.flags?.[PR_MODULE_ID]) prRequestRefresh("prRefreshTokenPerception");
 });
-Hooks.on("createActiveEffect", function() { prRefreshTokenPerception(); });
-Hooks.on("deleteActiveEffect", function() { prRefreshTokenPerception(); });
-Hooks.on("updateActiveEffect", function() { prRefreshTokenPerception(); });

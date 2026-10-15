@@ -2,7 +2,7 @@
   "id": "perceived-reality",
   "title": "GM Tools: Perceived Reality",
   "description": "Assign tokens, tiles, doors, and lights to perception groups. Only players whose tokens share a matching group can see them, enabling hallucinations, illusions, and other subjective realities without breaking the shared canvas.",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "compatibility": {
     "minimum": "12.328",
     "verified": "14"
@@ -27,12 +27,17 @@
     "scripts/token-config-hook.js",
     "scripts/token-hud-button.js",
     "scripts/moment-data.js",
+    "scripts/moment-plans.js",
+    "scripts/moment-shelter.js",
     "scripts/token-disguise.js",
+    "scripts/moment-ground.js",
     "scripts/moment-fx.js",
     "scripts/moment-overlay.js",
     "scripts/moment-runner.js",
+    "scripts/dropdown.js",
     "scripts/moment-builder.js",
     "scripts/moment-catalog.js",
+    "scripts/perception-window.js",
     "scripts/main.js",
     "scripts/update-checker.js"
   ],

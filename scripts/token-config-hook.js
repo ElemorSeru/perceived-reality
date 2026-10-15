@@ -7,9 +7,50 @@ function _prRegisterConfigHook(hookName, type) {
     const doc = app.document ?? app.object?.document;
     if (!doc) return;
     if (!game.user.isGM) return;
+    // a document that isnt created yet has nowhere to save groups
+    if (doc.parent?.documentName === "Scene" && !doc.id) return;
+    _prTrackScroll(app);
     _prInjectGroupSection(app, _prConfigEl(html), doc, type);
     if (type === "token") _prInjectDisguiseSection(app, _prConfigEl(html), doc);
+    _prRestoreScroll(app);
   });
+}
+
+function _prAppRoot(app) {
+  const el = app?.element;
+  return el instanceof HTMLElement ? el : el?.[0];
+}
+
+function _prScrollKey(el) {
+  if (el.dataset?.tab) return `tab:${el.dataset.tab}`;
+  return el.classList?.contains("window-content") ? "content" : null;
+}
+
+// core restores the scroll before the sections are back and cuts it off
+function _prTrackScroll(app) {
+  const root = _prAppRoot(app);
+  if (!root || root.dataset.prScroll) return;
+  root.dataset.prScroll = "1";
+  app._prScroll = {};
+  root.addEventListener("scroll", event => {
+    const key = _prScrollKey(event.target);
+    if (key) app._prScroll[key] = event.target.scrollTop;
+  }, true);
+}
+
+function _prRestoreScroll(app) {
+  const root = _prAppRoot(app);
+  const saved = app._prScroll;
+  if (!root || !saved) return;
+  const apply = () => {
+    for (const [key, top] of Object.entries(saved)) {
+      const el = key === "content" ? root.querySelector(".window-content")
+        : root.querySelector(`.tab[data-tab="${key.slice(4)}"]`);
+      if (el && el.scrollTop !== top) el.scrollTop = top;
+    }
+  };
+  apply();
+  requestAnimationFrame(() => requestAnimationFrame(apply));
 }
 
 _prRegisterConfigHook("renderTokenConfig", "token");
@@ -136,22 +177,52 @@ async function _prWriteGroupFlag(el, doc) {
   el.querySelectorAll("[data-pr-group]:checked").forEach(input => {
     checkedGroups.push(input.dataset.prGroup);
   });
+  await prCommitSeenByGroups([{ doc, groups: checkedGroups }]);
+}
 
-  try {
-    await doc.update(
-      { [`flags.${PR_MODULE_ID}.${PR_FLAG_PERCEPTION_GROUPS}`]: checkedGroups },
-      { render: false }
-    );
-  } catch(e) {
-    console.error(`[perceived-reality] Flag save failed:`, e);
+window.prCommitSeenByGroups = async function(changes) {
+  const key = `flags.${PR_MODULE_ID}.${PR_FLAG_PERCEPTION_GROUPS}`;
+  const batches = new Map();
+  for (const { doc, groups } of changes) {
+    try {
+      if (doc.parent?.documentName !== "Scene") {
+        await doc.update({ [key]: groups }, { render: false });
+        continue;
+      }
+    } catch(e) {
+      console.error(`[perceived-reality] Flag save failed:`, e);
+      continue;
+    }
+    const id = `${doc.parent.id}.${doc.documentName}`;
+    if (!batches.has(id)) batches.set(id, { scene: doc.parent, name: doc.documentName, updates: [] });
+    batches.get(id).updates.push({ _id: doc.id, [key]: groups });
+  }
+  for (const { scene, name, updates } of batches.values()) {
+    try {
+      await scene.updateEmbeddedDocuments(name, updates, { render: false });
+    } catch(e) {
+      console.error(`[perceived-reality] Flag save failed:`, e);
+    }
   }
 
   canvas.perception?.update({ refreshVision: true });
-  prRefreshTilePerception();
-  prRefreshLightPerception();
-  prRefreshTokenPerception();
-  prRefreshWallPerception();
+  for (const name of ["prRefreshTilePerception", "prRefreshLightPerception", "prRefreshTokenPerception", "prRefreshWallPerception"]) {
+    prRequestRefresh(name);
+  }
+};
+
+function _prSyncOpenSections(doc, change) {
+  if (!change?.flags?.[PR_MODULE_ID]) return;
+  const groups = doc.getFlag(PR_MODULE_ID, PR_FLAG_PERCEPTION_GROUPS) ?? [];
+  for (const app of Object.values(doc.apps ?? {})) {
+    const root = app.element instanceof HTMLElement ? app.element : app.element?.[0];
+    root?.querySelectorAll("input[data-pr-group]").forEach(input => {
+      input.checked = groups.includes(input.dataset.prGroup);
+    });
+  }
 }
+
+for (const hook of ["updateToken", "updateTile", "updateAmbientLight", "updateWall"]) Hooks.on(hook, _prSyncOpenSections);
 
 function _prMkEl(tag, cls, text) {
   const node = document.createElement(tag);
@@ -229,7 +300,7 @@ function _prBuildDisguiseGroupRow(doc, group, disguises) {
   async function writeEntry(next) {
     try {
       if (next === null) {
-        await doc.update({ [`flags.${PR_MODULE_ID}.${PR_FLAG_DISGUISES}.-=${group.id}`]: null }, { render: false });
+        await doc.update(prUnsetKey(`flags.${PR_MODULE_ID}.${PR_FLAG_DISGUISES}`, group.id), { render: false });
       } else {
         await doc.update({ [`flags.${PR_MODULE_ID}.${PR_FLAG_DISGUISES}.${group.id}`]: next }, { render: false });
       }
