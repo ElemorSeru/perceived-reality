@@ -141,6 +141,9 @@ This is built for spot-checking: select the rogue's token to confirm the hidden 
 
 ## Perception Window
 
+<p align="center">
+  <img src="assets/screenshots/PR_SelectorDialog.png" alt="image" width="339">
+</p>
 One quick access window with every group on the scene, so changing who sees what doesn't mean switching layers or opening config sheets. Open it from the eye tool in the Token, Tile, Lighting or Wall controls, with **Ctrl+Shift+E**, or by right-clicking a scene in the scene sidebar. GM only.
 
 - **Seen by / Sees** - switch between the groups that can see each thing and the groups each token is in. Click a group's icon on any row to add or remove it.
